@@ -68,6 +68,12 @@ mChat is a privacy-first, open-source mobile messaging application. Users own th
 | CON-02 | The app shall display a NIP-05 verified badge for contacts with a valid NIP-05 identifier. |
 | CON-03 | Contacts shall be stored locally for offline access. |
 | CON-04 | The user shall be able to search contacts by name or public key. |
+| CON-05 | The app shall integrate with the iOS Contacts app (CNContactStore). |
+| CON-06 | The user shall be able to link a Nostr pubkey to any existing iOS contact. The pubkey is stored in the contact's instant message addresses field (service: "Nostr"). |
+| CON-07 | The user shall be able to unlink a Nostr pubkey from an iOS contact. |
+| CON-08 | The app shall **never** upload the user's contact list to any server. No server-side phone-number-to-pubkey matching shall be performed. |
+| CON-09 | Linked iOS contacts shall appear in the "From Address Book" section of the Contacts tab, showing the contact's photo and full name from the address book. |
+| CON-10 | The app shall request Contacts permission only when the user initiates the address book integration, with a clear explanation shown before the system prompt. |
 
 ### 3.5 Relay Management
 

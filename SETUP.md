@@ -63,6 +63,9 @@ Add these entries to `Info.plist` (or via the target's Info tab):
 ```xml
 <key>NSFaceIDUsageDescription</key>
 <string>mChat uses Face ID to protect your private key</string>
+
+<key>NSContactsUsageDescription</key>
+<string>mChat reads your address book to find contacts you have linked with a Nostr public key. Your contacts are never uploaded to any server.</string>
 ```
 
 ---
