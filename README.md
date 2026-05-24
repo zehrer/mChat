@@ -1,14 +1,16 @@
-# mChat
+# mOpenChat
 
-**A native, open, privacy-first iOS chat app — your WhatsApp replacement that shares nothing with anyone.**
+**The native and open source chat client supporting peer-to-peer and other protocols — your WhatsApp replacement that shares nothing with anyone.**
 
-mChat is built on open protocols and cryptographic identities. No phone number. No central server. No company reading your messages. Your private key never leaves your device.
+mOpenChat is built on open protocols and cryptographic identities. No phone number. No central server. No company reading your messages. Your private key never leaves your device.
+
+> The source repository, Xcode project, Swift modules, and bundle identifier are still named `mChat` — the user-facing app name is **mOpenChat** because "mChat" is already taken on the App Store.
 
 ---
 
-## Why mChat?
+## Why mOpenChat?
 
-| WhatsApp | mChat |
+| WhatsApp | mOpenChat |
 |---|---|
 | Phone number required | Keypair — no registration |
 | Meta reads metadata | End-to-end encrypted content + sealed sender (NIP-17) |

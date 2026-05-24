@@ -1,4 +1,4 @@
-# Chat Protocol Candidates for mChat
+# Chat Protocol Candidates for mOpenChat
 
 *An evaluation of messaging protocols that could be added as `MessagingBackend` implementations, with prioritised recommendations.*
 
@@ -6,9 +6,9 @@
 
 ## How to Read This Document
 
-mChat's `MessagingBackend` protocol means adding a new chat network is a self-contained module — no UI or storage changes needed. The question is: which protocols are worth building, and in what order?
+mOpenChat's `MessagingBackend` protocol means adding a new chat network is a self-contained module — no UI or storage changes needed. The question is: which protocols are worth building, and in what order?
 
-Each entry is scored across five axes relevant to mChat's goals:
+Each entry is scored across five axes relevant to mOpenChat's goals:
 
 | Axis | What it means |
 |---|---|
@@ -75,10 +75,10 @@ Group     →  Megolm (per-session key, rotated periodically or on member change
 | Self-hostable | ✅ Synapse, Dendrite, Conduit |
 | Cross-signing / verified sessions | ✅ device verification via QR or emoji |
 
-### Why it fits mChat
+### Why it fits mOpenChat
 
 - **Best group chat story**: Megolm is the most mature E2E group encryption available
-- **Bridges**: Matrix bridges exist for Telegram, WhatsApp, Discord, Slack, IRC — adding Matrix to mChat effectively adds read-only access to all of those
+- **Bridges**: Matrix bridges exist for Telegram, WhatsApp, Discord, Slack, IRC — adding Matrix to mOpenChat effectively adds read-only access to all of those
 - **Enterprise use case**: Many companies self-host Matrix (Element provides commercial support)
 - **Large user base**: Element has millions of users; matrix.org homeserver is the default
 
@@ -104,7 +104,7 @@ actor MatrixBackend: MessagingBackend {
 }
 ```
 
-**Estimated effort:** Medium — SDK does the heavy lifting; main work is mapping Matrix room/event model to mChat's Conversation/ChatMessage types.
+**Estimated effort:** Medium — SDK does the heavy lifting; main work is mapping Matrix room/event model to mOpenChat's Conversation/ChatMessage types.
 
 ---
 
@@ -175,7 +175,7 @@ XMPP (eXtensible Messaging and Presence Protocol) is a federated, XML-based mess
 - **Largest addressable federated user base** of any open protocol
 - Many governments, universities, and enterprises run XMPP servers
 - German healthcare system uses XMPP; many German government departments
-- Enables mChat to talk to users on well-established Jabber/XMPP deployments
+- Enables mOpenChat to talk to users on well-established Jabber/XMPP deployments
 
 ### Privacy properties
 
@@ -247,14 +247,14 @@ Session's iOS app is open source Swift. The core library (`libsession-util`) is 
 This means Delta Chat works with **any email provider** — Gmail, iCloud, self-hosted — with no new infrastructure. Every email user is a potential contact.
 
 ```
-mChat user                   Delta Chat user / any email client
+mOpenChat user                   Delta Chat user / any email client
     │                                    │
     ├── SMTP → email provider → IMAP ───→│ appears as email
     │                                    │
     └── E2E encrypted with Autocrypt ────┘ (if both support it)
 ```
 
-### Why it's interesting for mChat
+### Why it's interesting for mOpenChat
 
 - **Largest possible reach**: 4+ billion email users are potential contacts
 - **Zero new infrastructure**: uses existing email providers
@@ -288,7 +288,7 @@ The **Signal Protocol** (Double Ratchet + X3DH) is the gold standard for E2E enc
 
 Critically: the protocol is separable from Signal's server infrastructure. **LibSignal** (the open-source library) can be used with any transport.
 
-### Relevance to mChat
+### Relevance to mOpenChat
 
 Rather than building a "Signal backend", the Signal Protocol could be layered on top of existing transports:
 
@@ -305,7 +305,7 @@ Apple's [CryptoKit](https://developer.apple.com/documentation/cryptokit) provide
 
 ### Why not a priority
 
-Telegram's **MTProto** protocol is proprietary and its privacy properties conflict with mChat's goals:
+Telegram's **MTProto** protocol is proprietary and its privacy properties conflict with mOpenChat's goals:
 
 | Issue | Detail |
 |---|---|
@@ -317,7 +317,7 @@ Telegram's **MTProto** protocol is proprietary and its privacy properties confli
 
 ### When it makes sense
 
-Telegram has 900+ million users. A **read-only bridge** (via [Telegram Bot API](https://core.telegram.org/bots/api) or the unofficial [TDLib](https://core.telegram.org/tdlib)) could let mChat users receive Telegram messages — useful for migrating contacts.
+Telegram has 900+ million users. A **read-only bridge** (via [Telegram Bot API](https://core.telegram.org/bots/api) or the unofficial [TDLib](https://core.telegram.org/tdlib)) could let mOpenChat users receive Telegram messages — useful for migrating contacts.
 
 ---
 
@@ -342,7 +342,7 @@ RCS serves a different use case (interoperability with SMS users) and cannot be 
 
 IRC is the oldest open chat protocol (1988). It has no E2E encryption, no persistent message history by default, and primitive identity.
 
-**Only worth considering as a bridge** for developer communities (many open-source projects use Libera.chat). A lightweight IRC connector could let mChat users lurk in `#swift` or `#ios` channels without opening a separate app.
+**Only worth considering as a bridge** for developer communities (many open-source projects use Libera.chat). A lightweight IRC connector could let mOpenChat users lurk in `#swift` or `#ios` channels without opening a separate app.
 
 ---
 

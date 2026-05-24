@@ -1,6 +1,6 @@
 # Nostr — Deep Dive
 
-*Notes on the Nostr Protocol as used in mChat*
+*Notes on the Nostr Protocol as used in mOpenChat*
 
 ---
 
@@ -17,7 +17,7 @@ Unlike Matrix or XMPP, Nostr deliberately avoids federation between servers. Ins
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                            CLIENT                               │
-│  (mChat, Damus, Primal, …)                                      │
+│  (mOpenChat, Damus, Primal, …)                                      │
 │                                                                 │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐        │
 │  │  Keypair     │   │  Event       │   │  Filter /    │        │
@@ -66,9 +66,9 @@ Nostr uses two encodings:
 
 `npub` = public key, `nsec` = private key (secret), `note` = event ID.
 
-In mChat we use hex internally and can display bech32 in the UI (Phase 2).
+In mOpenChat we use hex internally and can display bech32 in the UI (Phase 2).
 
-### Key generation in mChat
+### Key generation in mOpenChat
 
 ```swift
 // NostrKeyPair.swift
@@ -118,7 +118,7 @@ id = SHA256(
 
 This canonical serialisation must use no extra whitespace and specific Unicode escaping (NIP-01 §Event Serialisation).
 
-In mChat (`NostrEvent.swift`):
+In mOpenChat (`NostrEvent.swift`):
 ```swift
 let serialized = "[0,\"\(pubkey)\",\(createdAt),\(kind),\(tagsStr),\"\(escapedContent)\"]"
 let idData = Data(SHA256.hash(data: serialized.data(using: .utf8)!))
@@ -148,7 +148,7 @@ Kinds are integers. The range determines persistence behaviour on relays:
 | `20000–29999` | Ephemeral — relay may not store at all |
 | `30000–39999` | Parameterised replaceable |
 
-### Kinds used by mChat
+### Kinds used by mOpenChat
 
 | Kind | Name | NIP | Used for |
 |---|---|---|---|
@@ -228,7 +228,7 @@ A `REQ` filter tells the relay which events to send:
 
 Multiple filters in one `REQ` are ORed together.
 
-In mChat (`NostrFilter.swift`):
+In mOpenChat (`NostrFilter.swift`):
 ```swift
 // Subscribe to incoming DMs
 NostrFilter.incomingDMs(for: myPubkeyHex)
@@ -327,7 +327,7 @@ NIP-05 lets users claim a human-readable identifier like `alice@example.com` and
 4. If the pubkey matches the event's pubkey → verified ✅
 ```
 
-In mChat this is displayed as a green badge on the contact. Verification happens locally — no central authority.
+In mOpenChat this is displayed as a green badge on the contact. Verification happens locally — no central authority.
 
 ---
 
@@ -349,7 +349,7 @@ Group chats use a set of event kinds:
 // Create a channel
 {
   "kind": 40,
-  "content": "{\"name\":\"mChat dev\",\"about\":\"Building mChat\"}",
+  "content": "{\"name\":\"mOpenChat dev\",\"about\":\"Building mOpenChat\"}",
   "tags": [],
   ...
 }
@@ -367,7 +367,7 @@ Group chats use a set of event kinds:
 
 ## Relay Infrastructure
 
-### Public relays (mChat defaults)
+### Public relays (mOpenChat defaults)
 
 | Relay | Notes |
 |---|---|
@@ -390,7 +390,7 @@ Popular implementations:
 docker run -p 8080:8080 scsibug/nostr-rs-relay
 ```
 
-Connect mChat to your private relay by adding it via the relay management UI (Phase 2).
+Connect mOpenChat to your private relay by adding it via the relay management UI (Phase 2).
 
 ### NIP-65: Relay List Metadata
 
@@ -423,23 +423,23 @@ Users publish a kind-10002 event listing their preferred relays. Other clients r
 
 ### Threat model
 
-mChat is designed to protect against:
+mOpenChat is designed to protect against:
 - **Meta/WhatsApp**: No account, no phone number, no corporate server ✅
 - **Relay operator surveillance**: Content protected by E2E encryption ✅ (metadata with NIP-17)
 - **Message forgery**: Schnorr signatures make forgery cryptographically impossible ✅
 - **Account takeover**: Private key never leaves Keychain ✅
 - **Identity linkage**: Pseudonymous by default, bech32 addresses not linked to real identity ✅
 
-mChat does **not** protect against:
+mOpenChat does **not** protect against:
 - An attacker who compromises your device (private key in Keychain)
 - Timing correlation attacks by a relay that observes all traffic
 - IP address tracking (use Tor for full protection)
 
 ---
 
-## mChat Implementation Map
+## mOpenChat Implementation Map
 
-| NIP | Spec document | mChat file | Status |
+| NIP | Spec document | mOpenChat file | Status |
 |---|---|---|---|
 | NIP-01 | Basic protocol, event format | `NostrEvent.swift`, `NostrRelay.swift`, `NostrClient.swift` | ✅ Phase 1 |
 | NIP-04 | Encrypted DMs | `NIP04.swift`, `ChatMessage.swift` | ✅ Phase 1 |
@@ -467,7 +467,7 @@ mChat does **not** protect against:
 - [Primal](https://github.com/PrimalHQ/primal-ios-app) — open source, caching relay
 
 ### Libraries
-- [GigaBitcoin/secp256k1.swift](https://github.com/GigaBitcoin/secp256k1.swift) — used in mChat
+- [GigaBitcoin/secp256k1.swift](https://github.com/GigaBitcoin/secp256k1.swift) — used in mOpenChat
 - [nostr-sdk-ios](https://github.com/nostr-sdk/nostr-sdk-ios) — community iOS SDK
 
 ### Tools

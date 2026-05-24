@@ -1,6 +1,6 @@
 # P2P & Decentralised Messaging Technologies
 
-A reference guide for the protocols and stacks considered for mChat.
+A reference guide for the protocols and stacks considered for mOpenChat.
 
 ---
 
@@ -55,7 +55,7 @@ Telegram
 
 **Privacy trade-offs:** NIP-04 hides message *content* but the relay can see sender and recipient pubkeys (metadata). NIP-17 Gift Wrap (sealed sender) solves this.
 
-**Why we chose it for mChat:** Largest ecosystem, simplest protocol, best iOS tooling, no registration, pseudonymous by default.
+**Why we chose it for mOpenChat:** Largest ecosystem, simplest protocol, best iOS tooling, no registration, pseudonymous by default.
 
 ---
 
@@ -78,7 +78,7 @@ Telegram
 
 **Why not chosen for v1:** The runtime requires Node.js (via Pear runtime), which is a poor fit for a native Swift iOS app. The ecosystem for iOS is nascent. Reconsidering for a future native P2P transport layer.
 
-**Relevant to mChat future:** Could provide a direct device-to-device channel when both users are on the same network or reachable via UDP hole-punching, reducing relay dependency.
+**Relevant to mOpenChat future:** Could provide a direct device-to-device channel when both users are on the same network or reachable via UDP hole-punching, reducing relay dependency.
 
 ---
 
@@ -134,7 +134,7 @@ Telegram
 
 **Important distinction:** The Signal *Protocol* (the crypto) is open source and excellent. The Signal *App* requires a phone number and routes through Signal's servers. The protocol can be implemented over any transport.
 
-**Relevance to mChat:** The Double Ratchet provides stronger forward secrecy than NIP-04. A future upgrade could layer Signal Protocol semantics over Nostr transport (some NIPs explore this direction).
+**Relevance to mOpenChat:** The Double Ratchet provides stronger forward secrecy than NIP-04. A future upgrade could layer Signal Protocol semantics over Nostr transport (some NIPs explore this direction).
 
 ---
 
@@ -150,7 +150,7 @@ Telegram
 
 **How it works:** libp2p is a modular networking stack — peer discovery, multiplexing, encryption, and transport are all pluggable. It is the networking layer of IPFS and many blockchain projects.
 
-**Relevance to mChat:** Could provide direct device-to-device messaging without relays for local network scenarios, or as an alternative P2P transport for a future backend.
+**Relevance to mOpenChat:** Could provide direct device-to-device messaging without relays for local network scenarios, or as an alternative P2P transport for a future backend.
 
 ---
 
@@ -171,7 +171,7 @@ Telegram
 
 **Weaknesses:** Android-only, battery-intensive, slower than relay-based systems, contacts must be added manually via QR code.
 
-**Relevance to mChat:** Inspiration for a future Bluetooth/local-network transport layer. The "works without internet" use case is compelling.
+**Relevance to mOpenChat:** Inspiration for a future Bluetooth/local-network transport layer. The "works without internet" use case is compelling.
 
 ---
 
@@ -207,7 +207,7 @@ Telegram
 
 ---
 
-## mChat Protocol Roadmap
+## mOpenChat Protocol Roadmap
 
 ```
 Phase 1 (current)
@@ -228,7 +228,7 @@ Phase 4 (research)
 └── Briar-inspired Bluetooth mesh (no internet required)
 ```
 
-The `MessagingBackend` protocol in mChat is designed so each of these can be added as an independent module without changing the UI.
+The `MessagingBackend` protocol in mOpenChat is designed so each of these can be added as an independent module without changing the UI.
 
 ---
 

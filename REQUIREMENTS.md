@@ -1,4 +1,4 @@
-# mChat – Requirements Document
+# mOpenChat – Requirements Document
 
 **Version:** 0.1 (initial)
 **Date:** 2026-05-21
@@ -8,7 +8,9 @@
 
 ## 1. Vision
 
-mChat is a privacy-first, open-source mobile messaging application. Users own their identity (a cryptographic keypair), their messages travel end-to-end encrypted, and no single company can read, censor, or monetise their conversations.
+mOpenChat is a privacy-first, open-source mobile messaging application — a native and open source chat client supporting peer-to-peer and other protocols. Users own their identity (a cryptographic keypair), their messages travel end-to-end encrypted, and no single company can read, censor, or monetise their conversations.
+
+> Naming note: the user-facing app is **mOpenChat**; the source repo, Xcode project, Swift modules (`mChat`, `mChatCore`), and bundle identifier remain `mChat` because that name is already taken on the App Store.
 
 ---
 
