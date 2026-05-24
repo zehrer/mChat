@@ -1,5 +1,4 @@
 import SwiftUI
-import mChatCore
 
 struct ConversationListView: View {
     @EnvironmentObject var chat: ChatService

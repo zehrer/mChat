@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import mChatCore
 
 /// Thin SwiftData wrapper — all access must happen on the MainActor
 /// since we use the container's mainContext exclusively.

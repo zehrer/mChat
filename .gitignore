@@ -1,0 +1,9 @@
+.build/
+Package.resolved
+xcuserdata/
+DerivedData/
+.xcode-derived/
+.xcode-source-packages/
+build/
+.DS_Store
+**/.DS_Store

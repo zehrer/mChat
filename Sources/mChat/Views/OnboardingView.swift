@@ -1,5 +1,4 @@
 import SwiftUI
-import mChatCore
 
 struct OnboardingView: View {
     @EnvironmentObject var identity: IdentityService

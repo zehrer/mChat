@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import mChatCore
 
 /// The app-level service that orchestrates multiple backends and owns
 /// the in-memory state that drives the UI.

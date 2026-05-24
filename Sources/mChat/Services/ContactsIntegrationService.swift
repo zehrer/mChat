@@ -1,7 +1,6 @@
 import Foundation
 import Contacts
 import UIKit
-import mChatCore
 
 // MARK: - LinkedContact
 

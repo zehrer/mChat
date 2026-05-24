@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import mChatCore
 
 @Model
 final class StoredMessage {

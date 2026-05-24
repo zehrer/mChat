@@ -27,7 +27,7 @@ public actor NostrClient {
         await relay.connect()
         let task = Task { [weak self] in
             guard let self else { return }
-            for await message in await relay.messages {
+            for await message in relay.messages {
                 await self.handle(message, from: relay)
             }
         }

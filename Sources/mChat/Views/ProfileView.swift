@@ -1,5 +1,4 @@
 import SwiftUI
-import mChatCore
 
 struct ProfileView: View {
     @EnvironmentObject var identity: IdentityService

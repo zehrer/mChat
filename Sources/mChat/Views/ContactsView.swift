@@ -1,6 +1,5 @@
 import SwiftUI
 import Contacts
-import mChatCore
 
 struct ContactsView: View {
     @EnvironmentObject var chat: ChatService

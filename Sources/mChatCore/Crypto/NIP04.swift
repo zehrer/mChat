@@ -57,10 +57,10 @@ public enum NIP04 {
             throw NostrError.invalidPublicKey
         }
         let compressed = Data([0x02]) + xOnly
-        let priv = try secp256k1.KeyAgreement.PrivateKey(rawRepresentation: privateKey)
-        let pub  = try secp256k1.KeyAgreement.PublicKey(rawRepresentation: compressed)
+        let priv = try secp256k1.KeyAgreement.PrivateKey(dataRepresentation: privateKey)
+        let pub  = try secp256k1.KeyAgreement.PublicKey(dataRepresentation: compressed)
         let secret = try priv.sharedSecretFromKeyAgreement(with: pub)
-        return secret.withUnsafeBytes { Data($0) }
+        return secret.withUnsafeBytes { Data($0.dropFirst()) }
     }
 
     private enum AESOperation { case encrypt, decrypt }

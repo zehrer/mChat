@@ -1,5 +1,4 @@
 import SwiftUI
-import mChatCore
 
 struct ChatView: View {
     let conversation: Conversation

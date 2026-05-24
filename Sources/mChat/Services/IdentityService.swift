@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import mChatCore
 
 /// Manages the user's Nostr identity. The private key is stored in the iOS Keychain.
 /// The public key (safe to persist plainly) is stored in UserDefaults.

@@ -12,13 +12,11 @@ public struct NostrKeyPair: Sendable {
     public var privateKeyHex: String { privateKeyBytes.hexString }
     public var publicKeyHex: String  { publicKeyBytes.hexString }
 
-    private let signingKey: secp256k1.Signing.PrivateKey
-
     // MARK: - Init
 
     public init() throws {
-        let key = try secp256k1.Signing.PrivateKey(format: .compressed)
-        try self.init(rawPrivateKey: Data(key.rawRepresentation))
+        let key = try secp256k1.Schnorr.PrivateKey()
+        try self.init(rawPrivateKey: key.dataRepresentation)
     }
 
     public init(privateKeyHex: String) throws {
@@ -33,12 +31,9 @@ public struct NostrKeyPair: Sendable {
     }
 
     private init(rawPrivateKey bytes: Data) throws {
-        let key = try secp256k1.Signing.PrivateKey(rawRepresentation: bytes, format: .compressed)
-        signingKey = key
+        let key = try secp256k1.Schnorr.PrivateKey(dataRepresentation: bytes)
         privateKeyBytes = bytes
-        // Compressed public key is 33 bytes (02/03 prefix + 32-byte x).
-        // Nostr uses only the x-coordinate (32 bytes).
-        publicKeyBytes = Data(key.publicKey.rawRepresentation.dropFirst())
+        publicKeyBytes = Data(key.xonly.bytes)
     }
 
     // MARK: - Signing
@@ -46,9 +41,14 @@ public struct NostrKeyPair: Sendable {
     /// Signs a 32-byte event ID with Schnorr (BIP-340) as required by NIP-01.
     public func sign(eventId: Data) throws -> String {
         guard eventId.count == 32 else { throw NostrError.signingFailed }
-        let xonly = signingKey.xonly
-        let signature = try xonly.signature(for: eventId)
-        return Data(signature.rawRepresentation).hexString
+        let signingKey = try secp256k1.Schnorr.PrivateKey(dataRepresentation: privateKeyBytes)
+        var eventBytes = [UInt8](eventId)
+        let signature = try signingKey.signature(
+            message: &eventBytes,
+            auxiliaryRand: nil,
+            strict: true
+        )
+        return signature.dataRepresentation.hexString
     }
 
     // MARK: - ECDH
@@ -61,9 +61,9 @@ public struct NostrKeyPair: Sendable {
         }
         // Add a 02 compression prefix to turn x-only → compressed pubkey
         let compressed = Data([0x02]) + recipientXOnly
-        let privKey = try secp256k1.KeyAgreement.PrivateKey(rawRepresentation: privateKeyBytes)
-        let pubKey = try secp256k1.KeyAgreement.PublicKey(rawRepresentation: compressed)
+        let privKey = try secp256k1.KeyAgreement.PrivateKey(dataRepresentation: privateKeyBytes)
+        let pubKey = try secp256k1.KeyAgreement.PublicKey(dataRepresentation: compressed)
         let secret = try privKey.sharedSecretFromKeyAgreement(with: pubKey)
-        return secret.withUnsafeBytes { Data($0) }
+        return secret.withUnsafeBytes { Data($0.dropFirst()) }
     }
 }

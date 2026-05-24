@@ -1,0 +1,466 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		110000000000000000000001 /* App/mChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000001 /* App/mChatApp.swift */; };
+		110000000000000000000002 /* Services/ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000002 /* Services/ChatService.swift */; };
+		110000000000000000000003 /* Services/ContactsIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000003 /* Services/ContactsIntegrationService.swift */; };
+		110000000000000000000004 /* Services/IdentityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000004 /* Services/IdentityService.swift */; };
+		110000000000000000000005 /* Storage/MessageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000005 /* Storage/MessageStore.swift */; };
+		110000000000000000000006 /* Storage/StoredContact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000006 /* Storage/StoredContact.swift */; };
+		110000000000000000000007 /* Storage/StoredConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000007 /* Storage/StoredConversation.swift */; };
+		110000000000000000000008 /* Storage/StoredMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000008 /* Storage/StoredMessage.swift */; };
+		110000000000000000000009 /* Views/ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000009 /* Views/ChatView.swift */; };
+		11000000000000000000000A /* Views/ContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000A /* Views/ContactsView.swift */; };
+		11000000000000000000000B /* Views/ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000B /* Views/ConversationListView.swift */; };
+		11000000000000000000000C /* Views/MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000C /* Views/MainTabView.swift */; };
+		11000000000000000000000D /* Views/OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000D /* Views/OnboardingView.swift */; };
+		11000000000000000000000E /* Views/ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000E /* Views/ProfileView.swift */; };
+		11000000000000000000000F /* Backend/MessagingBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000000F /* Backend/MessagingBackend.swift */; };
+		110000000000000000000010 /* Backend/NostrBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000010 /* Backend/NostrBackend.swift */; };
+		110000000000000000000011 /* Crypto/NIP04.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000011 /* Crypto/NIP04.swift */; };
+		110000000000000000000012 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000012 /* Extensions.swift */; };
+		110000000000000000000013 /* Models/ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000013 /* Models/ChatMessage.swift */; };
+		110000000000000000000014 /* Models/Contact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000014 /* Models/Contact.swift */; };
+		110000000000000000000015 /* Models/Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000015 /* Models/Conversation.swift */; };
+		110000000000000000000016 /* Nostr/NostrClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000016 /* Nostr/NostrClient.swift */; };
+		110000000000000000000017 /* Nostr/NostrError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000017 /* Nostr/NostrError.swift */; };
+		110000000000000000000018 /* Nostr/NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000018 /* Nostr/NostrEvent.swift */; };
+		110000000000000000000019 /* Nostr/NostrFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210000000000000000000019 /* Nostr/NostrFilter.swift */; };
+		11000000000000000000001A /* Nostr/NostrKeyPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000001A /* Nostr/NostrKeyPair.swift */; };
+		11000000000000000000001B /* Nostr/NostrRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000000000001B /* Nostr/NostrRelay.swift */; };
+		110000000000000000000100 /* secp256k1 in Frameworks */ = {isa = PBXBuildFile; productRef = 910000000000000000000002 /* secp256k1 */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		210000000000000000000001 /* App/mChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/mChatApp.swift; sourceTree = "<group>"; };
+		210000000000000000000002 /* Services/ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ChatService.swift; sourceTree = "<group>"; };
+		210000000000000000000003 /* Services/ContactsIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ContactsIntegrationService.swift; sourceTree = "<group>"; };
+		210000000000000000000004 /* Services/IdentityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/IdentityService.swift; sourceTree = "<group>"; };
+		210000000000000000000005 /* Storage/MessageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage/MessageStore.swift; sourceTree = "<group>"; };
+		210000000000000000000006 /* Storage/StoredContact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage/StoredContact.swift; sourceTree = "<group>"; };
+		210000000000000000000007 /* Storage/StoredConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage/StoredConversation.swift; sourceTree = "<group>"; };
+		210000000000000000000008 /* Storage/StoredMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage/StoredMessage.swift; sourceTree = "<group>"; };
+		210000000000000000000009 /* Views/ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ChatView.swift; sourceTree = "<group>"; };
+		21000000000000000000000A /* Views/ContactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ContactsView.swift; sourceTree = "<group>"; };
+		21000000000000000000000B /* Views/ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ConversationListView.swift; sourceTree = "<group>"; };
+		21000000000000000000000C /* Views/MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MainTabView.swift; sourceTree = "<group>"; };
+		21000000000000000000000D /* Views/OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/OnboardingView.swift; sourceTree = "<group>"; };
+		21000000000000000000000E /* Views/ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ProfileView.swift; sourceTree = "<group>"; };
+		21000000000000000000000F /* Backend/MessagingBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend/MessagingBackend.swift; sourceTree = "<group>"; };
+		210000000000000000000010 /* Backend/NostrBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend/NostrBackend.swift; sourceTree = "<group>"; };
+		210000000000000000000011 /* Crypto/NIP04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto/NIP04.swift; sourceTree = "<group>"; };
+		210000000000000000000012 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		210000000000000000000013 /* Models/ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/ChatMessage.swift; sourceTree = "<group>"; };
+		210000000000000000000014 /* Models/Contact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Contact.swift; sourceTree = "<group>"; };
+		210000000000000000000015 /* Models/Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Conversation.swift; sourceTree = "<group>"; };
+		210000000000000000000016 /* Nostr/NostrClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrClient.swift; sourceTree = "<group>"; };
+		210000000000000000000017 /* Nostr/NostrError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrError.swift; sourceTree = "<group>"; };
+		210000000000000000000018 /* Nostr/NostrEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrEvent.swift; sourceTree = "<group>"; };
+		210000000000000000000019 /* Nostr/NostrFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrFilter.swift; sourceTree = "<group>"; };
+		21000000000000000000001A /* Nostr/NostrKeyPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrKeyPair.swift; sourceTree = "<group>"; };
+		21000000000000000000001B /* Nostr/NostrRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nostr/NostrRelay.swift; sourceTree = "<group>"; };
+		310000000000000000000001 /* mChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		410000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000100 /* secp256k1 in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		510000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				510000000000000000000002 /* mChat */,
+				510000000000000000000003 /* Core */,
+				510000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		510000000000000000000002 /* mChat */ = {
+			isa = PBXGroup;
+			children = (
+				210000000000000000000001 /* App/mChatApp.swift */,
+				210000000000000000000002 /* Services/ChatService.swift */,
+				210000000000000000000003 /* Services/ContactsIntegrationService.swift */,
+				210000000000000000000004 /* Services/IdentityService.swift */,
+				210000000000000000000005 /* Storage/MessageStore.swift */,
+				210000000000000000000006 /* Storage/StoredContact.swift */,
+				210000000000000000000007 /* Storage/StoredConversation.swift */,
+				210000000000000000000008 /* Storage/StoredMessage.swift */,
+				210000000000000000000009 /* Views/ChatView.swift */,
+				21000000000000000000000A /* Views/ContactsView.swift */,
+				21000000000000000000000B /* Views/ConversationListView.swift */,
+				21000000000000000000000C /* Views/MainTabView.swift */,
+				21000000000000000000000D /* Views/OnboardingView.swift */,
+				21000000000000000000000E /* Views/ProfileView.swift */,
+			);
+			name = mChat;
+			path = Sources/mChat;
+			sourceTree = "<group>";
+		};
+		510000000000000000000003 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				21000000000000000000000F /* Backend/MessagingBackend.swift */,
+				210000000000000000000010 /* Backend/NostrBackend.swift */,
+				210000000000000000000011 /* Crypto/NIP04.swift */,
+				210000000000000000000012 /* Extensions.swift */,
+				210000000000000000000013 /* Models/ChatMessage.swift */,
+				210000000000000000000014 /* Models/Contact.swift */,
+				210000000000000000000015 /* Models/Conversation.swift */,
+				210000000000000000000016 /* Nostr/NostrClient.swift */,
+				210000000000000000000017 /* Nostr/NostrError.swift */,
+				210000000000000000000018 /* Nostr/NostrEvent.swift */,
+				210000000000000000000019 /* Nostr/NostrFilter.swift */,
+				21000000000000000000001A /* Nostr/NostrKeyPair.swift */,
+				21000000000000000000001B /* Nostr/NostrRelay.swift */,
+			);
+			name = Core;
+			path = Sources/mChatCore;
+			sourceTree = "<group>";
+		};
+		510000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				310000000000000000000001 /* mChat.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		610000000000000000000001 /* mChat */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 810000000000000000000002 /* Build configuration list for PBXNativeTarget "mChat" */;
+			buildPhases = (
+				710000000000000000000001 /* Sources */,
+				410000000000000000000001 /* Frameworks */,
+				710000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = mChat;
+			packageProductDependencies = (
+				910000000000000000000002 /* secp256k1 */,
+			);
+			productName = mChat;
+			productReference = 310000000000000000000001 /* mChat.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		610000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					610000000000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 810000000000000000000001 /* Build configuration list for PBXProject "mChat" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 510000000000000000000001;
+			packageReferences = (
+				910000000000000000000001 /* XCRemoteSwiftPackageReference "secp256k1" */,
+			);
+			productRefGroup = 510000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				610000000000000000000001 /* mChat */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		710000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		710000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000001 /* App/mChatApp.swift in Sources */,
+				110000000000000000000002 /* Services/ChatService.swift in Sources */,
+				110000000000000000000003 /* Services/ContactsIntegrationService.swift in Sources */,
+				110000000000000000000004 /* Services/IdentityService.swift in Sources */,
+				110000000000000000000005 /* Storage/MessageStore.swift in Sources */,
+				110000000000000000000006 /* Storage/StoredContact.swift in Sources */,
+				110000000000000000000007 /* Storage/StoredConversation.swift in Sources */,
+				110000000000000000000008 /* Storage/StoredMessage.swift in Sources */,
+				110000000000000000000009 /* Views/ChatView.swift in Sources */,
+				11000000000000000000000A /* Views/ContactsView.swift in Sources */,
+				11000000000000000000000B /* Views/ConversationListView.swift in Sources */,
+				11000000000000000000000C /* Views/MainTabView.swift in Sources */,
+				11000000000000000000000D /* Views/OnboardingView.swift in Sources */,
+				11000000000000000000000E /* Views/ProfileView.swift in Sources */,
+				11000000000000000000000F /* Backend/MessagingBackend.swift in Sources */,
+				110000000000000000000010 /* Backend/NostrBackend.swift in Sources */,
+				110000000000000000000011 /* Crypto/NIP04.swift in Sources */,
+				110000000000000000000012 /* Extensions.swift in Sources */,
+				110000000000000000000013 /* Models/ChatMessage.swift in Sources */,
+				110000000000000000000014 /* Models/Contact.swift in Sources */,
+				110000000000000000000015 /* Models/Conversation.swift in Sources */,
+				110000000000000000000016 /* Nostr/NostrClient.swift in Sources */,
+				110000000000000000000017 /* Nostr/NostrError.swift in Sources */,
+				110000000000000000000018 /* Nostr/NostrEvent.swift in Sources */,
+				110000000000000000000019 /* Nostr/NostrFilter.swift in Sources */,
+				11000000000000000000001A /* Nostr/NostrKeyPair.swift in Sources */,
+				11000000000000000000001B /* Nostr/NostrRelay.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		810000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		810000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		810000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = NV9LC295QZ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = mOpenChat;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSContactsUsageDescription = "mChat reads contacts you choose to link with Nostr identities. Contacts are never uploaded.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "mChat uses Face ID to protect private key access.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = net.zehrer.mChat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		810000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = NV9LC295QZ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = mOpenChat;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSContactsUsageDescription = "mChat reads contacts you choose to link with Nostr identities. Contacts are never uploaded.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "mChat uses Face ID to protect private key access.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = net.zehrer.mChat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		810000000000000000000001 /* Build configuration list for PBXProject "mChat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				810000000000000000000003 /* Debug */,
+				810000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		810000000000000000000002 /* Build configuration list for PBXNativeTarget "mChat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				810000000000000000000005 /* Debug */,
+				810000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		910000000000000000000001 /* XCRemoteSwiftPackageReference "secp256k1" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/GigaBitcoin/secp256k1.swift";
+			requirement = {
+				kind = exactVersion;
+				version = 0.19.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		910000000000000000000002 /* secp256k1 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 910000000000000000000001 /* XCRemoteSwiftPackageReference "secp256k1" */;
+			productName = secp256k1;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 610000000000000000000002 /* Project object */;
+}
