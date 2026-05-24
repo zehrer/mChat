@@ -2,15 +2,18 @@ import Foundation
 import SwiftData
 import mChatCore
 
-/// Thin SwiftData wrapper — all access must happen on the MainActor
-/// since we use the container's mainContext exclusively.
+/// SwiftData-backed implementation of `StorageBackend`.
+/// All access happens on the `@MainActor` via the container's `mainContext`.
+///
+/// Registered into the plugin container by `SwiftDataStoragePlugin`.
+/// Swap it out by registering a different `StorageBackend` implementation — no other
+/// code needs to change.
 @MainActor
-final class MessageStore {
+final class MessageStore: StorageBackend {
 
     static let shared = MessageStore()
 
     private let container: ModelContainer
-
     private var context: ModelContext { container.mainContext }
 
     private init() {
@@ -22,15 +25,14 @@ final class MessageStore {
             ])
             container = try ModelContainer(for: schema)
         } catch {
-            // A failure here means the on-disk schema is incompatible.
-            // In production, add a migration plan instead of crashing.
+            // Schema incompatibility — add a migration plan before shipping v2.
             fatalError("SwiftData container failed to initialise: \(error)")
         }
     }
 
-    // MARK: - Messages
+    // MARK: - StorageBackend: Messages
 
-    func save(_ message: ChatMessage) throws {
+    func save(_ message: ChatMessage) async throws {
         let id = message.id
         let existing = try fetch(StoredMessage.self, where: #Predicate { $0.id == id }).first
         if let existing {
@@ -41,14 +43,13 @@ final class MessageStore {
         try context.save()
     }
 
-    func updateDeliveryStatus(_ status: ChatMessage.DeliveryStatus, messageId: String) throws {
+    func updateDeliveryStatus(_ status: ChatMessage.DeliveryStatus, messageId: String) async throws {
         let existing = try fetch(StoredMessage.self, where: #Predicate { $0.id == messageId }).first
         existing?.deliveryStatusRaw = status.rawValue
         try context.save()
     }
 
-    /// Returns messages for a conversation sorted oldest → newest, capped at `limit`.
-    func messages(for conversationId: String, limit: Int = 200) throws -> [ChatMessage] {
+    func messages(for conversationId: String, limit: Int = 200) async throws -> [ChatMessage] {
         var descriptor = FetchDescriptor<StoredMessage>(
             predicate: #Predicate { $0.conversationId == conversationId },
             sortBy: [SortDescriptor(\.timestamp)]
@@ -57,14 +58,14 @@ final class MessageStore {
         return try context.fetch(descriptor).map { $0.toChatMessage() }
     }
 
-    // MARK: - Conversations
+    // MARK: - StorageBackend: Conversations
 
-    func save(_ conversation: Conversation) throws {
+    func save(_ conversation: Conversation) async throws {
         let id = conversation.id
         let existing = try fetch(StoredConversation.self, where: #Predicate { $0.id == id }).first
         if let existing {
-            existing.isPinned  = conversation.isPinned
-            existing.isMuted   = conversation.isMuted
+            existing.isPinned             = conversation.isPinned
+            existing.isMuted              = conversation.isMuted
             existing.lastMessageTimestamp = conversation.lastMessage?.timestamp
         } else {
             context.insert(StoredConversation(from: conversation))
@@ -72,42 +73,40 @@ final class MessageStore {
         try context.save()
     }
 
-    /// Returns all conversations sorted by last message time (newest first).
-    func allConversations() throws -> [Conversation] {
+    func allConversations() async throws -> [Conversation] {
         let descriptor = FetchDescriptor<StoredConversation>(
             sortBy: [SortDescriptor(\.lastMessageTimestamp, order: .reverse)]
         )
         return try context.fetch(descriptor).compactMap { $0.toConversation() }
     }
 
-    // MARK: - Contacts
+    // MARK: - StorageBackend: Contacts
 
-    func save(_ contact: Contact) throws {
+    func save(_ contact: Contact) async throws {
         let pubkey = contact.pubkeyHex
         let existing = try fetch(StoredContact.self, where: #Predicate { $0.pubkeyHex == pubkey }).first
         if let existing {
-            existing.displayName     = contact.displayName
-            existing.about           = contact.about
+            existing.displayName      = contact.displayName
+            existing.about            = contact.about
             existing.pictureURLString = contact.pictureURL?.absoluteString
-            existing.nip05           = contact.nip05
-            existing.lastSeen        = contact.lastSeen
+            existing.nip05            = contact.nip05
+            existing.lastSeen         = contact.lastSeen
         } else {
             context.insert(StoredContact(from: contact))
         }
         try context.save()
     }
 
-    func allContacts() throws -> [Contact] {
+    func allContacts() async throws -> [Contact] {
         try context.fetch(FetchDescriptor<StoredContact>()).map { $0.toContact() }
     }
 
-    // MARK: - Private helper
+    // MARK: - Private
 
     private func fetch<T: PersistentModel>(
         _ type: T.Type,
         where predicate: Predicate<T>? = nil
     ) throws -> [T] {
-        let descriptor = FetchDescriptor<T>(predicate: predicate)
-        return try context.fetch(descriptor)
+        try context.fetch(FetchDescriptor<T>(predicate: predicate))
     }
 }

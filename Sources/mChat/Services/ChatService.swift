@@ -1,47 +1,67 @@
 import Foundation
 import SwiftUI
+import AppBrickCore
 import mChatCore
 
-/// The app-level service that orchestrates multiple backends and owns
-/// the in-memory state that drives the UI.
-/// SwiftData persistence is handled transparently via MessageStore.
+/// Orchestrates all registered messaging and storage backends.
+///
+/// `ChatService` is the composition root's consumer — it never instantiates
+/// backends itself. Instead it resolves them from the `AppEnvironment` that was
+/// assembled in `mChatApp` by wiring `AppPlugin` conformances.
+///
+/// Adding a new protocol backend (Matrix, XMPP, …):
+///   1. Create `MatrixPlugin` conforming to `AppPlugin`
+///   2. Register it in `mChatApp` → `PluginContainer`
+///   3. `ChatService.start()` picks it up automatically — no changes here.
+///
+/// Adding a new storage backend (iCloud, SQLite, GraphDB, …):
+///   1. Create a type conforming to `StorageBackend`
+///   2. Create a plugin that registers it as `StorageBackendBox`
+///   3. Swap the plugin in `mChatApp` → done.
 @MainActor
 public final class ChatService: ObservableObject {
-
-    public static let shared = ChatService()
 
     @Published public private(set) var conversations: [Conversation] = []
     @Published public private(set) var messages: [String: [ChatMessage]] = [:]
     @Published public private(set) var contacts:  [String: Contact] = [:]
     @Published public var isConnected = false
 
+    private let env: AppEnvironment
     private let identity = IdentityService.shared
-    private let store    = MessageStore.shared
-
     private var incomingTasks: [ChatProtocol: Task<Void, Never>] = [:]
-    private var nostrBackend: NostrBackend?
 
-    private init() {}
+    private var storage: any StorageBackend {
+        env.plugins.require(StorageBackendBox.self).backend
+    }
+
+    public init(environment: AppEnvironment) {
+        self.env = environment
+    }
 
     // MARK: - Lifecycle
 
     public func start() async {
-        loadPersistedState()
+        await loadPersistedState()
+        guard identity.keyPair != nil else { return }
 
-        guard let kp = identity.keyPair else { return }
-
-        let nostr = NostrBackend(keyPair: kp)
-        nostrBackend = nostr
-        BackendRegistry.shared.register(nostr)
-
-        do {
-            try await nostr.connect()
-            isConnected = true
-        } catch {
-            print("[ChatService] Nostr connect failed: \(error)")
+        // Connect every registered MessagingBackend.
+        // New protocols appear here automatically once their plugin is registered.
+        for proto in ChatProtocol.allCases {
+            switch proto {
+            case .nostr:
+                guard let backend = env.plugins.resolve(NostrBackend.self) else { continue }
+                BackendRegistry.shared.register(backend)
+                do {
+                    try await backend.connect()
+                    isConnected = true
+                } catch {
+                    env.logger.error("[ChatService] \(proto.rawValue) connect failed: \(error)")
+                }
+                listenForIncoming(backend: backend)
+            default:
+                break  // Matrix, XMPP etc. resolved here in Phase 3
+            }
         }
-
-        listenForIncoming(backend: nostr)
     }
 
     public func stop() async {
@@ -56,11 +76,12 @@ public final class ChatService: ObservableObject {
         let conv = Conversation(protocol: proto, type: .oneToOne(peerIdentifier: peerIdentifier))
         if !conversations.contains(conv) {
             conversations.insert(conv, at: 0)
-            persistConversation(conv)
+            Task { try? await storage.save(conv) }
         }
-        // Load any persisted messages for this conversation if not already in memory
         if messages[conv.id] == nil {
-            messages[conv.id] = (try? store.messages(for: conv.id)) ?? []
+            Task {
+                messages[conv.id] = (try? await storage.messages(for: conv.id)) ?? []
+            }
         }
         return conv
     }
@@ -72,7 +93,7 @@ public final class ChatService: ObservableObject {
         let conv = try await backend.createGroup(name: name, members: members)
         if !conversations.contains(conv) {
             conversations.insert(conv, at: 0)
-            persistConversation(conv)
+            try? await storage.save(conv)
         }
         return conv
     }
@@ -84,7 +105,6 @@ public final class ChatService: ObservableObject {
             throw ChatServiceError.backendNotAvailable(conversation.protocol)
         }
         var msg = try await backend.send(text: text, in: conversation)
-        // Mark as sending until the relay confirms OK
         msg = ChatMessage(
             id: msg.id,
             conversationId: msg.conversationId,
@@ -96,8 +116,8 @@ public final class ChatService: ObservableObject {
             protocol: msg.protocol
         )
         append(message: msg)
-        persistMessage(msg)
-        updateConversationLastMessage(msg)
+        try? await storage.save(msg)
+        await updateConversationLastMessage(msg)
     }
 
     // MARK: - Contact resolution
@@ -107,40 +127,26 @@ public final class ChatService: ObservableObject {
               let backend = BackendRegistry.shared.backend(for: proto) else { return }
         if let c = try? await backend.resolveContact(identifier: identifier) {
             contacts[identifier] = c
-            try? store.save(c)
+            try? await storage.save(c)
         }
     }
 
-    // MARK: - Private: persistence
+    // MARK: - Private: bootstrap from storage
 
-    private func loadPersistedState() {
-        // Conversations
-        let storedConvs = (try? store.allConversations()) ?? []
-        conversations = storedConvs
+    private func loadPersistedState() async {
+        conversations = (try? await storage.allConversations()) ?? []
 
-        // Contacts
-        let storedContacts = (try? store.allContacts()) ?? []
-        for contact in storedContacts {
-            contacts[contact.pubkeyHex] = contact
-        }
+        let storedContacts = (try? await storage.allContacts()) ?? []
+        for contact in storedContacts { contacts[contact.pubkeyHex] = contact }
 
-        // Recent messages for each conversation
         for conv in conversations {
-            let msgs = (try? store.messages(for: conv.id)) ?? []
+            let msgs = (try? await storage.messages(for: conv.id)) ?? []
             guard !msgs.isEmpty else { continue }
             messages[conv.id] = msgs
             if let last = msgs.last, let idx = conversations.firstIndex(where: { $0.id == conv.id }) {
                 conversations[idx].lastMessage = last
             }
         }
-    }
-
-    private func persistMessage(_ msg: ChatMessage) {
-        try? store.save(msg)
-    }
-
-    private func persistConversation(_ conv: Conversation) {
-        try? store.save(conv)
     }
 
     // MARK: - Private: incoming messages
@@ -157,23 +163,17 @@ public final class ChatService: ObservableObject {
     }
 
     private func handleIncoming(_ message: ChatMessage) {
-        let conv: Conversation
-        switch message.protocol {
-        default:
-            conv = Conversation(
-                protocol: message.protocol,
-                type: .oneToOne(peerIdentifier: message.senderIdentifier)
-            )
-        }
+        let conv = Conversation(
+            protocol: message.protocol,
+            type: .oneToOne(peerIdentifier: message.senderIdentifier)
+        )
         if !conversations.contains(conv) {
             conversations.insert(conv, at: 0)
-            persistConversation(conv)
+            Task { try? await storage.save(conv) }
         }
-
         append(message: message)
-        persistMessage(message)
-        updateConversationLastMessage(message)
-
+        Task { try? await storage.save(message) }
+        Task { await updateConversationLastMessage(message) }
         Task { await resolveContact(identifier: message.senderIdentifier, protocol: message.protocol) }
     }
 
@@ -187,10 +187,10 @@ public final class ChatService: ObservableObject {
         messages[message.conversationId] = list
     }
 
-    private func updateConversationLastMessage(_ msg: ChatMessage) {
+    private func updateConversationLastMessage(_ msg: ChatMessage) async {
         guard let idx = conversations.firstIndex(where: { $0.id == msg.conversationId }) else { return }
         conversations[idx].lastMessage = msg
-        persistConversation(conversations[idx])
+        try? await storage.save(conversations[idx])
     }
 }
 
