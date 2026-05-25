@@ -7,7 +7,7 @@ import Foundation
 /// - `.group`     → NIP-28 channel messages (kind 42)  [stubbed, Phase 2]
 public actor NostrBackend: MessagingBackend {
 
-    public let chatProtocol: ChatProtocol = .nostr
+    public nonisolated let chatProtocol: ChatProtocol = .nostr
 
     private let keyPair: NostrKeyPair
     private let client: NostrClient

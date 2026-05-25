@@ -9,7 +9,7 @@ public enum NostrError: Error, LocalizedError, Sendable {
     case invalidEventJSON
     case relayNotConnected
     case relayConnectionFailed(URL)
-    case keychainError(OSStatus)
+    case keychainError(Int32)
 
     public var errorDescription: String? {
         switch self {

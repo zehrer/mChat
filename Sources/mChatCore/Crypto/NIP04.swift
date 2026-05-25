@@ -2,6 +2,9 @@ import Foundation
 import secp256k1
 #if canImport(CommonCrypto)
 import CommonCrypto
+#else
+import Crypto
+import _CryptoExtras
 #endif
 
 /// NIP-04 encrypted direct messages.
@@ -23,8 +26,7 @@ public enum NIP04 {
         recipientPubkeyHex: String
     ) throws -> String {
         let key = try sharedKey(privateKey: senderPrivkey, recipientPubkeyHex: recipientPubkeyHex)
-        var iv = Data(count: 16)
-        _ = iv.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+        let iv = randomBytes(count: 16)
         let plainData = plaintext.data(using: .utf8) ?? Data()
         let cipher = try aesCBC(.encrypt, data: plainData, key: key, iv: iv)
         return "\(cipher.base64EncodedString())?iv=\(iv.base64EncodedString())"
@@ -52,13 +54,23 @@ public enum NIP04 {
 
     // MARK: - Private helpers
 
+    private static func randomBytes(count: Int) -> Data {
+        #if canImport(CommonCrypto)
+        var data = Data(count: count)
+        _ = data.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+        return data
+        #else
+        return Data((0..<count).map { _ in UInt8.random(in: .min ... .max) })
+        #endif
+    }
+
     private static func sharedKey(privateKey: Data, recipientPubkeyHex: String) throws -> Data {
         guard let xOnly = Data(hexString: recipientPubkeyHex) else {
             throw NostrError.invalidPublicKey
         }
         let compressed = Data([0x02]) + xOnly
-        let priv = try secp256k1.KeyAgreement.PrivateKey(rawRepresentation: privateKey)
-        let pub  = try secp256k1.KeyAgreement.PublicKey(rawRepresentation: compressed)
+        let priv = try secp256k1.KeyAgreement.PrivateKey(dataRepresentation: privateKey)
+        let pub  = try secp256k1.KeyAgreement.PublicKey(dataRepresentation: compressed)
         let secret = try priv.sharedSecretFromKeyAgreement(with: pub)
         return secret.withUnsafeBytes { Data($0) }
     }
@@ -98,7 +110,14 @@ public enum NIP04 {
         }
         return Data(outBuf.prefix(outLen))
         #else
-        throw NostrError.encryptionFailed
+        let symmetricKey = SymmetricKey(data: key)
+        let aesIV = try AES._CBC.IV(ivBytes: Array(iv))
+        switch op {
+        case .encrypt:
+            return try AES._CBC.encrypt(data, using: symmetricKey, iv: aesIV)
+        case .decrypt:
+            return try AES._CBC.decrypt(data, using: symmetricKey, iv: aesIV)
+        }
         #endif
     }
 }
