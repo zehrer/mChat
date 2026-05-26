@@ -44,7 +44,7 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
 // MARK: - Sending
 
 async fn send_dm(client: &Client, recipient: &PublicKey, text: &str) {
-    match client.send_direct_msg(*recipient, text, None).await {
+    match client.send_private_msg(*recipient, text, None).await {
         Ok(_) => println!("[sent]"),
         Err(e) => println!("Send failed: {e}"),
     }
