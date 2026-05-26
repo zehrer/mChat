@@ -1,6 +1,10 @@
 # P2P & Decentralised Messaging Technologies
 
-A reference guide for the protocols and stacks considered for mChat.
+A reference guide for the protocols and stacks considered for mChat and HomeNode.
+
+> **mChat** is the native iOS/macOS client (Swift).
+> **HomeNode** is the personal relay/homeserver backend (Rust).
+> Both are designed to work together but are independently deployable.
 
 ---
 
@@ -57,6 +61,8 @@ Telegram
 
 **Why we chose it for mChat:** Largest ecosystem, simplest protocol, best iOS tooling, no registration, pseudonymous by default.
 
+**Rust ecosystem:** `rust-nostr` / `nostr-sdk` — comprehensive, actively maintained, first-class support. A personal Nostr relay in Rust is ~500 lines. ✅ Excellent fit for HomeNode.
+
 ---
 
 ### 2. Pear / Hypercore Protocol
@@ -71,6 +77,7 @@ Telegram
 | Group chat | Autobase (multi-writer merge) |
 | Maturity | Production — Keet.io is built on it |
 | iOS support | Limited (Node.js runtime required) |
+| Rust support | ❌ No official SDK; ecosystem is JS-only |
 
 **How it works:** Hypercore is a distributed, append-only log. Each feed is identified by a public key. Hyperswarm handles NAT traversal and peer discovery via a DHT. Multiple writers are merged with Autobase.
 
@@ -79,6 +86,17 @@ Telegram
 **Why not chosen for v1:** The runtime requires Node.js (via Pear runtime), which is a poor fit for a native Swift iOS app. The ecosystem for iOS is nascent. Reconsidering for a future native P2P transport layer.
 
 **Relevant to mChat future:** Could provide a direct device-to-device channel when both users are on the same network or reachable via UDP hole-punching, reducing relay dependency.
+
+**Rust ecosystem:** No official Rust SDK. A community `hypercore` crate exists on crates.io but is incomplete and last active ~2022. No Rust implementation of UDX (Hypercore's custom UDP transport) or Autobase exists. However, the *underlying primitives* map well to Rust:
+
+| Hypercore concept | Rust equivalent |
+|---|---|
+| Kademlia DHT (Hyperswarm) | `rust-libp2p` kademlia |
+| NOISE encryption | `snow` crate (first-class) |
+| Append-only log | trivial to implement |
+| NAT hole-punching | `rust-libp2p` QUIC / UDP |
+
+**Verdict for HomeNode:** ❌ Not viable today. A Hypercore-inspired design in Rust is possible but requires building the protocol from scratch — cannot interoperate with the existing Pear/Keet ecosystem.
 
 ---
 
@@ -100,6 +118,8 @@ Telegram
 
 **Why planned for Phase 3:** Requires a homeserver (can self-host), more complex protocol, but provides the best story for enterprise/group use cases.
 
+**Rust ecosystem:** `matrix-rust-sdk` — the official SDK; Element X on iOS actually uses it via FFI. **Conduit** is a full Matrix homeserver written in Rust — lightweight, self-hostable, actively maintained. ✅ Excellent fit for HomeNode as a personal homeserver.
+
 ---
 
 ### 4. XMPP (Extensible Messaging and Presence Protocol)
@@ -120,6 +140,8 @@ Telegram
 
 **Weaknesses:** XML-based (verbose), federation reveals metadata to both servers, setup complexity.
 
+**Rust ecosystem:** `tokio-xmpp` crate exists but is immature and rarely used in production. ⚠️ Weak fit for HomeNode.
+
 ---
 
 ### 5. Signal Protocol
@@ -135,6 +157,8 @@ Telegram
 **Important distinction:** The Signal *Protocol* (the crypto) is open source and excellent. The Signal *App* requires a phone number and routes through Signal's servers. The protocol can be implemented over any transport.
 
 **Relevance to mChat:** The Double Ratchet provides stronger forward secrecy than NIP-04. A future upgrade could layer Signal Protocol semantics over Nostr transport (some NIPs explore this direction).
+
+**Rust ecosystem:** `libsignal` (Signal's own library) has Rust components. The Double Ratchet is implementable in Rust but there is no standalone "plug-in Signal server" in Rust. ⚠️ Relevant as a crypto primitive, not a standalone backend.
 
 ---
 
@@ -152,9 +176,31 @@ Telegram
 
 **Relevance to mChat:** Could provide direct device-to-device messaging without relays for local network scenarios, or as an alternative P2P transport for a future backend.
 
+**Rust ecosystem:** `rust-libp2p` is one of the *primary* implementations (alongside Go) — used by IPFS, Polkadot, Ethereum 2.0. First-class crate, actively maintained. ✅ Excellent fit for HomeNode as a P2P transport/routing layer.
+
 ---
 
-### 7. Briar
+### 7. Veilid
+
+| Property | Value |
+|---|---|
+| Type | True P2P (DHT-based) |
+| Identity | Ed25519 keypair |
+| Transport | UDP/TCP with NOISE encryption |
+| Data model | DHT-based routing + RPC |
+| Maturity | Early production — actively developed by Cult of the Dead Cow |
+| iOS support | Limited (Rust FFI bindings) |
+| Rust support | ✅ Native Rust — entire stack |
+
+**How it works:** Veilid is a privacy-first P2P network framework. All traffic is routed through the Veilid network using a Kademlia-like DHT. Nodes relay each other's encrypted traffic, similar to Tor but with lower latency.
+
+**Interesting properties:** Designed from the ground up for privacy (no IP leakage by design), works as an application-level overlay network, native Rust implementation.
+
+**Rust ecosystem:** The entire Veilid stack is written in Rust with mobile FFI bindings. ✅ Native Rust — excellent fit for HomeNode, though ecosystem is still small.
+
+---
+
+### 8. Briar
 
 | Property | Value |
 |---|---|
@@ -173,9 +219,11 @@ Telegram
 
 **Relevance to mChat:** Inspiration for a future Bluetooth/local-network transport layer. The "works without internet" use case is compelling.
 
+**Rust ecosystem:** Briar is Java/Android. No Rust implementation. ❌ Not applicable for HomeNode.
+
 ---
 
-### 8. Secure Scuttlebutt (SSB)
+### 9. Secure Scuttlebutt (SSB)
 
 | Property | Value |
 |---|---|
@@ -190,45 +238,73 @@ Telegram
 
 **Interesting property:** Works well in offline-first / intermittently connected environments.
 
+**Rust ecosystem:** Community SSB implementations exist in Rust (`kuska-ssb`) but are experimental. ⚠️ Not production-ready for HomeNode.
+
+---
+
+## Rust Ecosystem Summary
+
+This table evaluates each protocol's viability for **HomeNode** — a personal relay/homeserver written in Rust.
+
+| Protocol | Rust crate(s) | Maturity | HomeNode fit | Notes |
+|---|---|---|---|---|
+| **Nostr** | `rust-nostr`, `nostr-sdk` | ✅ Production | ✅ Excellent | Personal relay in ~500 lines |
+| **Matrix** | `matrix-rust-sdk`, Conduit | ✅ Production | ✅ Excellent | Conduit = full homeserver in Rust |
+| **libp2p** | `rust-libp2p` | ✅ Production | ✅ Excellent | P2P transport/routing layer |
+| **Veilid** | `veilid-core` | ⚠️ Early prod | ✅ Good | Native Rust, small ecosystem |
+| **Signal Protocol** | `libsignal` (partial) | ⚠️ Partial | ⚠️ Crypto only | No standalone Rust server |
+| **XMPP** | `tokio-xmpp` | ⚠️ Immature | ⚠️ Weak | Crates exist, not production-grade |
+| **Pear/Hypercore** | `hypercore` (abandoned) | ❌ Incomplete | ❌ Poor | JS-only ecosystem; no UDX/Autobase in Rust |
+| **SimpleX** | — | ❌ None | ❌ Poor | Core stack is Haskell |
+| **Briar** | — | ❌ None | ❌ Poor | Java/Android only |
+| **SSB** | `kuska-ssb` | ⚠️ Experimental | ⚠️ Weak | Not production-ready |
+
+**Recommended HomeNode starting stack:** Nostr relay (Phase 1) → Matrix/Conduit (Phase 2) → libp2p routing layer (Phase 3).
+
 ---
 
 ## Comparison Matrix
 
-| Protocol | No server | No phone# | E2E encrypted | iOS | Group chat | Offline msgs |
-|---|---|---|---|---|---|---|
-| **Nostr** | Relays (dumb) | ✅ | ✅ NIP-04/44 | ✅ | ✅ NIP-28 | ✅ (relay stores) |
-| **Pear/Hypercore** | ✅ | ✅ | ✅ | ⚠️ | ✅ Autobase | ✅ |
-| **Matrix** | Self-host | ✅ | ✅ Olm/Megolm | ✅ | ✅ | ✅ |
-| **XMPP+OMEMO** | Self-host | ✅ | ✅ | ✅ | ✅ MUC | ✅ |
-| **Signal app** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Briar** | ✅ | ✅ | ✅ | ❌ | ⚠️ | ✅ |
-| **SSB** | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ✅ |
-| **libp2p** | ✅ | ✅ | ✅ | ⚠️ | — | — |
+| Protocol | No server | No phone# | E2E encrypted | iOS (Swift) | Rust backend | Group chat | Offline msgs |
+|---|---|---|---|---|---|---|---|
+| **Nostr** | Relays (dumb) | ✅ | ✅ NIP-04/44 | ✅ | ✅ | ✅ NIP-28 | ✅ (relay stores) |
+| **Matrix** | Self-host | ✅ | ✅ Olm/Megolm | ✅ | ✅ Conduit | ✅ | ✅ |
+| **libp2p** | ✅ | ✅ | ✅ | ⚠️ | ✅ | — | — |
+| **Veilid** | ✅ | ✅ | ✅ | ⚠️ | ✅ | ⚠️ | ✅ |
+| **Pear/Hypercore** | ✅ | ✅ | ✅ | ⚠️ | ❌ | ✅ Autobase | ✅ |
+| **XMPP+OMEMO** | Self-host | ✅ | ✅ | ✅ | ⚠️ | ✅ MUC | ✅ |
+| **Signal app** | ❌ | ❌ | ✅ | ✅ | ⚠️ | ✅ | ✅ |
+| **Briar** | ✅ | ✅ | ✅ | ❌ | ❌ | ⚠️ | ✅ |
+| **SSB** | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ |
 
 ---
 
-## mChat Protocol Roadmap
+## mChat + HomeNode Roadmap
 
 ```
+mChat (Swift — iOS/macOS)          HomeNode (Rust — self-hosted)
+─────────────────────────────────  ──────────────────────────────────
+
 Phase 1 (current)
-└── Nostr (NIP-01, NIP-04)
-    └── 1:1 encrypted DMs via public relay network
+├── Nostr (NIP-01, NIP-04)         ← (public relay network)
+└── 1:1 encrypted DMs
 
 Phase 2
-├── Nostr NIP-17 (Gift Wrap — sealed sender for metadata privacy)
-├── Nostr NIP-28 (Group channels)
-└── Nostr NIP-44 (XChaCha20 encryption upgrade)
+├── Nostr NIP-17 (Gift Wrap)       ← HomeNode: personal Nostr relay
+├── Nostr NIP-28 (Group channels)     (rust-nostr / nostr-rs-relay)
+└── Nostr NIP-44 (XChaCha20)
 
 Phase 3
-├── Matrix backend (federated, best for large groups / enterprise)
-└── XMPP backend (federated, wide compatibility)
+├── Matrix backend                 ← HomeNode: Conduit homeserver
+└── XMPP backend                      (matrix-rust-sdk)
 
 Phase 4 (research)
-├── Pear/Hypercore transport (true P2P for local network / offline)
-└── Briar-inspired Bluetooth mesh (no internet required)
+├── libp2p P2P transport           ← HomeNode: rust-libp2p routing node
+├── Veilid overlay routing
+└── Briar-inspired Bluetooth mesh
 ```
 
-The `MessagingBackend` protocol in mChat is designed so each of these can be added as an independent module without changing the UI.
+The `MessagingBackend` protocol in mChat is designed so each of these can be added as an independent module without changing the UI. HomeNode is the corresponding server-side component — a personal relay and homeserver that you own and operate.
 
 ---
 
