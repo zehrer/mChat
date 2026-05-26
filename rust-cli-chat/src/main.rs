@@ -24,14 +24,12 @@ fn identity_path() -> PathBuf {
 
 fn load_or_create_keys() -> anyhow::Result<Keys> {
     let path = identity_path();
-
     if path.exists() {
         let hex = fs::read_to_string(&path)?.trim().to_string();
         if !hex.is_empty() {
             return Ok(Keys::parse(&hex)?);
         }
     }
-
     let keys = Keys::generate();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -39,6 +37,11 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
     fs::write(&path, keys.secret_key().to_secret_hex())?;
     println!("New identity generated — saved to {}", path.display());
     Ok(keys)
+}
+
+// Accepts both hex (64-char) and bech32 npub1... format.
+fn parse_pubkey(s: &str) -> anyhow::Result<PublicKey> {
+    PublicKey::parse(s).map_err(|e| anyhow::anyhow!("Invalid pubkey '{}': {}", s, e))
 }
 
 // MARK: - Sending
@@ -55,11 +58,12 @@ async fn send_dm(client: &Client, recipient: &PublicKey, text: &str) {
 fn print_help() {
     println!(
         "\nCommands:\n  \
-         whoami               Show your public / private key\n  \
-         chat <pubkey>        Set active chat partner (then just type to send)\n  \
-         send <pubkey> <msg>  Send a one-off DM\n  \
-         help                 Show this help\n  \
-         quit                 Disconnect and exit\n"
+         whoami                Show your public key / npub / private key\n  \
+         chat <npub|pubkey>    Set active chat partner (then just type to send)\n  \
+         send <npub|pubkey> <msg>  Send a one-off DM\n  \
+         relays                List connected relays\n  \
+         help                  Show this help\n  \
+         quit                  Disconnect and exit\n"
     );
 }
 
@@ -81,6 +85,9 @@ fn prompt() {
 async fn main() -> anyhow::Result<()> {
     let keys = load_or_create_keys()?;
     println!("Your pubkey : {}", keys.public_key().to_hex());
+    if let Ok(npub) = keys.public_key().to_bech32() {
+        println!("Your npub   : {npub}");
+    }
 
     let client = Client::new(keys.clone());
 
@@ -90,39 +97,57 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Connecting to Nostr relays…");
     client.connect().await;
-    println!("Connected.\n");
+    println!("Connected to {} relays.\n", DEFAULT_RELAYS.len());
 
-    // Subscribe to incoming DMs addressed to us
+    // Subscribe: recent history (last 50 DMs) + live feed
     let filter = Filter::new()
         .pubkey(keys.public_key())
-        .kind(Kind::EncryptedDirectMessage);
+        .kind(Kind::EncryptedDirectMessage)
+        .limit(50);
     client.subscribe(vec![filter], None).await?;
 
-    // Background task: print incoming messages as they arrive
+    // Background task: print incoming messages and mark end-of-history
     let mut notifications = client.notifications();
     let sk = keys.secret_key().to_owned();
     tokio::spawn(async move {
+        let mut history_done = false;
         while let Ok(notification) = notifications.recv().await {
-            if let RelayPoolNotification::Event { event, .. } = notification {
-                if event.kind == Kind::EncryptedDirectMessage {
-                    if let Ok(content) = nip04::decrypt(&sk, &event.pubkey, &event.content) {
-                        let from = &event.pubkey.to_hex()[..12];
-                        let time = format_time(event.created_at);
-                        print!("\r[{time}] {from}…: {content}\n> ");
-                        stdio::stdout().flush().ok();
+            match notification {
+                RelayPoolNotification::Event { event, .. } => {
+                    if event.kind == Kind::EncryptedDirectMessage {
+                        if let Ok(content) = nip04::decrypt(&sk, &event.pubkey, &event.content) {
+                            let from = &event.pubkey.to_hex()[..12];
+                            let time = format_time(event.created_at);
+                            if history_done {
+                                // Overwrite the "> " prompt line, then reprint it
+                                print!("\r[{time}] {from}…: {content}\n> ");
+                            } else {
+                                print!("[{time}] {from}…: {content}\n");
+                            }
+                            stdio::stdout().flush().ok();
+                        }
                     }
                 }
+                RelayPoolNotification::Message { message, .. } => {
+                    if let RelayMessage::EndOfStoredEvents(_) = message {
+                        if !history_done {
+                            history_done = true;
+                            println!("─── live ───");
+                            prompt();
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     });
 
     print_help();
+    prompt();
 
     let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
     let mut active_peer: Option<PublicKey> = None;
-
-    prompt();
 
     while let Ok(Some(line)) = lines.next_line().await {
         let line = line.trim().to_string();
@@ -141,34 +166,45 @@ async fn main() -> anyhow::Result<()> {
 
             "whoami" => {
                 println!("Public key : {}", keys.public_key().to_hex());
+                if let Ok(npub) = keys.public_key().to_bech32() {
+                    println!("npub       : {npub}");
+                }
                 println!(
                     "Private key: {}  ← keep secret",
                     keys.secret_key().to_secret_hex()
                 );
             }
 
+            "relays" => {
+                let relays = client.relays().await;
+                for url in relays.keys() {
+                    println!("  {url}");
+                }
+                println!("  ({} relays)", relays.len());
+            }
+
             "chat" => {
                 if arg1.is_empty() {
-                    println!("Usage: chat <pubkey>");
+                    println!("Usage: chat <npub or pubkey hex>");
                 } else {
-                    match PublicKey::from_hex(&arg1) {
+                    match parse_pubkey(&arg1) {
                         Ok(pk) => {
                             println!("Chatting with {arg1}");
                             println!("Just type a message and press Enter to send.");
                             active_peer = Some(pk);
                         }
-                        Err(_) => println!("Invalid pubkey"),
+                        Err(e) => println!("{e}"),
                     }
                 }
             }
 
             "send" => {
                 if arg1.is_empty() || rest.is_empty() {
-                    println!("Usage: send <pubkey> <message>");
+                    println!("Usage: send <npub or pubkey hex> <message>");
                 } else {
-                    match PublicKey::from_hex(&arg1) {
+                    match parse_pubkey(&arg1) {
                         Ok(pk) => send_dm(&client, &pk, &rest).await,
-                        Err(_) => println!("Invalid pubkey"),
+                        Err(e) => println!("{e}"),
                     }
                 }
             }
