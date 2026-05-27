@@ -175,6 +175,8 @@ See [docs/protocol-candidates.md](docs/protocol-candidates.md) for the full prot
 
 Issues and pull requests are welcome. See [REQUIREMENTS.md](REQUIREMENTS.md) for the current scope and open questions.
 
+This project follows the development standards defined in [zehrer/development](https://github.com/zehrer/development): branch protection, PR-based workflow, and conventional commit messages.
+
 ---
 
 ## License

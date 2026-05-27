@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - Relay message types
 
@@ -29,6 +32,7 @@ public actor NostrRelay {
     public let messages: AsyncStream<RelayMessage>
 
     private var activeSubscriptions: [String: NostrFilter] = [:]
+    private var connectContinuation: CheckedContinuation<Void, Never>?
 
     public init(url: URL) {
         self.url = url
@@ -46,9 +50,13 @@ public actor NostrRelay {
         let wst = session.webSocketTask(with: url)
         task = wst
         wst.resume()
-        state = .connected
-        Task { await receiveLoop() }
-        // Re-subscribe to any subscriptions that were open before reconnect
+
+        // Wait until the receive loop signals the WebSocket is open before sending subscriptions
+        await withCheckedContinuation { cont in
+            connectContinuation = cont
+            Task { await self.receiveLoop() }
+        }
+
         for (id, filter) in activeSubscriptions {
             try? await sendSubscribe(id: id, filter: filter)
         }
@@ -96,7 +104,16 @@ public actor NostrRelay {
     }
 
     private func receiveLoop() async {
-        guard let wst = task else { return }
+        guard let wst = task else {
+            connectContinuation?.resume()
+            connectContinuation = nil
+            return
+        }
+        // Signal connect() that the socket is open and ready for subscriptions
+        state = .connected
+        connectContinuation?.resume()
+        connectContinuation = nil
+
         while true {
             do {
                 let msg = try await wst.receive()
