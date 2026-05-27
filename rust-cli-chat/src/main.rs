@@ -14,6 +14,9 @@ const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.nostr.band",
     "wss://nos.lol",
     "wss://relay.snort.social",
+    "wss://nostr.wine",
+    "wss://relay.current.fyi",
+    "wss://purplepag.es",
 ];
 
 /// NIP-38 kind for user status events.
@@ -65,8 +68,18 @@ fn resolve(arg: &str, book: &contacts::Contacts) -> anyhow::Result<PublicKey> {
 
 // MARK: - Sending
 
-async fn send_dm(client: &Client, recipient: &PublicKey, text: &str) {
-    match client.send_private_msg(*recipient, text, None).await {
+async fn send_dm(client: &Client, keys: &Keys, recipient: &PublicKey, text: &str) {
+    // Explicit NIP-04 (kind:4) so every Nostr client can read and reply in kind.
+    let encrypted = match nip04::encrypt(keys.secret_key(), recipient, text) {
+        Ok(e) => e,
+        Err(e) => { println!("Encrypt failed: {e}"); return; }
+    };
+    let builder = EventBuilder::new(
+        Kind::EncryptedDirectMessage,
+        encrypted,
+        [Tag::public_key(*recipient)],
+    );
+    match client.send_event_builder(builder).await {
         Ok(_) => println!("[sent]"),
         Err(e) => println!("Send failed: {e}"),
     }
@@ -165,6 +178,17 @@ fn format_time(ts: Timestamp) -> String {
     format!("{:02}:{:02}", (secs % 86400) / 3600, (secs % 3600) / 60)
 }
 
+fn print_msg(from_hex: &str, ts: Timestamp, content: &str, live: bool) {
+    let from = if from_hex.len() >= 12 { &from_hex[..12] } else { from_hex };
+    let time = format_time(ts);
+    if live {
+        print!("\r[{time}] {from}…: {content}\n> ");
+    } else {
+        print!("[{time}] {from}…: {content}\n");
+    }
+    stdio::stdout().flush().ok();
+}
+
 fn prompt() {
     print!("> ");
     stdio::stdout().flush().ok();
@@ -193,31 +217,40 @@ async fn main() -> anyhow::Result<()> {
     publish_online_status(&client).await;
     println!("Status: online\n");
 
-    // Subscribe: recent DMs + live feed
-    let filter = Filter::new()
+    // Must grab notification receiver BEFORE subscribing to avoid missing
+    // events that the relay delivers before this receiver is created.
+    let mut notifications = client.notifications();
+
+    // Subscribe: NIP-04 (kind:4) and NIP-17 gift wraps (kind:1059) addressed to us
+    let filter_nip04 = Filter::new()
         .pubkey(keys.public_key())
         .kind(Kind::EncryptedDirectMessage)
         .limit(50);
-    client.subscribe(vec![filter], None).await?;
+    let filter_nip17 = Filter::new()
+        .pubkey(keys.public_key())
+        .kind(Kind::GiftWrap)
+        .limit(50);
+    client.subscribe(vec![filter_nip04, filter_nip17], None).await?;
 
-    // Background task: incoming messages + EOSE separator
-    let mut notifications = client.notifications();
     let sk = keys.secret_key().to_owned();
+    let client_clone = client.clone();
     tokio::spawn(async move {
         let mut history_done = false;
         while let Ok(notification) = notifications.recv().await {
             match notification {
                 RelayPoolNotification::Event { event, .. } => {
                     if event.kind == Kind::EncryptedDirectMessage {
+                        // NIP-04
                         if let Ok(content) = nip04::decrypt(&sk, &event.pubkey, &event.content) {
-                            let from = &event.pubkey.to_hex()[..12];
-                            let time = format_time(event.created_at);
-                            if history_done {
-                                print!("\r[{time}] {from}…: {content}\n> ");
-                            } else {
-                                print!("[{time}] {from}…: {content}\n");
-                            }
-                            stdio::stdout().flush().ok();
+                            print_msg(&event.pubkey.to_hex(), event.created_at, &content, history_done);
+                        }
+                    } else if event.kind == Kind::GiftWrap {
+                        // NIP-17 — unwrap gift, extract rumor content
+                        if let Ok(unwrapped) = client_clone.unwrap_gift_wrap(&event).await {
+                            let content = unwrapped.rumor.content.clone();
+                            let sender = unwrapped.sender.to_hex();
+                            let ts = unwrapped.rumor.created_at;
+                            print_msg(&sender, ts, &content, history_done);
                         }
                     }
                 }
@@ -345,7 +378,7 @@ async fn main() -> anyhow::Result<()> {
                     println!("Usage: send <alias | npub | pubkey> <message>");
                 } else {
                     match resolve(&arg1, &book) {
-                        Ok(pk) => send_dm(&client, &pk, &rest).await,
+                        Ok(pk) => send_dm(&client, &keys, &pk, &rest).await,
                         Err(e) => println!("{e}"),
                     }
                 }
@@ -359,7 +392,7 @@ async fn main() -> anyhow::Result<()> {
 
             _ => {
                 if let Some(peer) = &active_peer {
-                    send_dm(&client, peer, &line).await;
+                    send_dm(&client, &keys, peer, &line).await;
                 } else {
                     println!("Unknown command. Type 'help' for commands.");
                 }

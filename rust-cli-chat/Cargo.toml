@@ -8,6 +8,10 @@ description = "Nostr CLI chat client — Rust port of mCLIChat"
 name = "mclichat"
 path = "src/main.rs"
 
+[[bin]]
+name = "mchatd"
+path = "src/bin/mchatd.rs"
+
 [dependencies]
 # Nostr protocol: keypairs, relay connections, NIP-04 encrypted DMs
 nostr-sdk = { version = "0.36", features = ["nip04"] }
