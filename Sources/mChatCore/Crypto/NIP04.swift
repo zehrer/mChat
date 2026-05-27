@@ -68,11 +68,14 @@ public enum NIP04 {
         guard let xOnly = Data(hexString: recipientPubkeyHex) else {
             throw NostrError.invalidPublicKey
         }
+        // Prepend 02 to turn x-only → compressed pubkey for secp256k1 key agreement.
         let compressed = Data([0x02]) + xOnly
         let priv = try secp256k1.KeyAgreement.PrivateKey(dataRepresentation: privateKey)
         let pub  = try secp256k1.KeyAgreement.PublicKey(dataRepresentation: compressed)
         let secret = try priv.sharedSecretFromKeyAgreement(with: pub)
-        return secret.withUnsafeBytes { Data($0) }
+        // sharedSecretFromKeyAgreement returns 33 bytes (compressed: 0x02/03 prefix + 32-byte x-coord).
+        // NIP-04 uses only the x-coordinate as the 32-byte AES-256 key.
+        return secret.withUnsafeBytes { Data($0).dropFirst() }
     }
 
     private enum AESOperation { case encrypt, decrypt }

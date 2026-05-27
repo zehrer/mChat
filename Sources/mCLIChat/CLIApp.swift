@@ -56,8 +56,8 @@ struct CLIApp {
                 print("Private key: \(keyPair.privateKeyHex)  ← keep secret")
 
             case "chat":
-                guard tokens.count == 2 else { print("Usage: chat <pubkey>"); continue }
-                activePeer = tokens[1]
+                guard tokens.count == 2 else { print("Usage: chat <npub|pubkey>"); continue }
+                activePeer = resolveHex(tokens[1])
                 print("Chatting with \(activePeer!)")
                 print("Just type a message and press Enter to send.")
 
@@ -82,14 +82,54 @@ struct CLIApp {
 
     // MARK: - Helpers
 
-    static func sendDM(_ text: String, to pubkey: String, via backend: NostrBackend) async {
-        let conv = Conversation(protocol: .nostr, type: .oneToOne(peerIdentifier: pubkey))
+    static func sendDM(_ text: String, to pubkeyOrNpub: String, via backend: NostrBackend) async {
+        let hex = resolveHex(pubkeyOrNpub)
+        let conv = Conversation(protocol: .nostr, type: .oneToOne(peerIdentifier: hex))
         do {
             _ = try await backend.send(text: text, in: conv)
             print("[sent]")
         } catch {
             print("Send failed: \(error)")
         }
+    }
+
+    /// Converts an npub1… bech32 string to lowercase hex. Returns the input unchanged if it
+    /// is already hex or cannot be decoded.
+    static func resolveHex(_ input: String) -> String {
+        let s = input.lowercased()
+        guard s.hasPrefix("npub1") else { return s }
+        let data = s.dropFirst(5) // drop "npub1"
+        guard let decoded = bech32Decode(String(data)) else { return s }
+        return decoded.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // Minimal bech32 decoder (no checksum verification — just data extraction).
+    private static let bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    static func bech32Decode(_ dataStr: String) -> [UInt8]? {
+        var values = [UInt8]()
+        for c in dataStr {
+            guard let idx = bech32Charset.firstIndex(of: c) else { return nil }
+            values.append(UInt8(bech32Charset.distance(from: bech32Charset.startIndex, to: idx)))
+        }
+        // Drop last 6 characters (checksum)
+        guard values.count > 6 else { return nil }
+        let data = Array(values.dropLast(6))
+        return convertBits(data, from: 5, to: 8, pad: false)
+    }
+
+    static func convertBits(_ data: [UInt8], from: Int, to: Int, pad: Bool) -> [UInt8]? {
+        var acc = 0; var bits = 0; var out = [UInt8](); let maxv = (1 << to) - 1
+        for value in data {
+            acc = (acc << from) | Int(value)
+            bits += from
+            while bits >= to {
+                bits -= to
+                out.append(UInt8((acc >> bits) & maxv))
+            }
+        }
+        if pad { if bits > 0 { out.append(UInt8((acc << (to - bits)) & maxv)) } }
+        else if bits >= from || ((acc << (to - bits)) & maxv) != 0 { return nil }
+        return out
     }
 
     static func printPrompt() {
