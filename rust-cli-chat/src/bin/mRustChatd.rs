@@ -39,8 +39,8 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let keys = load_or_create_keys()?;
-    println!("mchatd pubkey : {}", keys.public_key().to_hex());
-    println!("mchatd npub   : {}", keys.public_key().to_bech32()?);
+    println!("mRustChatd pubkey : {}", keys.public_key().to_hex());
+    println!("mRustChatd npub   : {}", keys.public_key().to_bech32()?);
 
     let client = Client::new(keys.clone());
     for url in DEFAULT_RELAYS {
@@ -53,14 +53,9 @@ async fn main() -> anyhow::Result<()> {
 
     client
         .subscribe(
-            vec![
-                Filter::new()
-                    .pubkey(keys.public_key())
-                    .kind(Kind::EncryptedDirectMessage),
-                Filter::new()
-                    .pubkey(keys.public_key())
-                    .kind(Kind::GiftWrap),
-            ],
+            vec![Filter::new()
+                .pubkey(keys.public_key())
+                .kind(Kind::EncryptedDirectMessage)],
             None,
         )
         .await?;
@@ -102,21 +97,6 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => println!("  → encrypt failed: {e}"),
-                }
-            }
-
-            Kind::GiftWrap => {
-                let Ok(unwrapped) = client.unwrap_gift_wrap(&event).await else {
-                    continue;
-                };
-                let inner = &unwrapped.rumor;
-                let from = shorten(&inner.pubkey.to_hex());
-                println!("[NIP-17] {from}: {}", inner.content);
-
-                let reply = format!("echo: {}", inner.content);
-                match client.send_private_msg(inner.pubkey, &reply, None).await {
-                    Ok(_) => println!("  → echoed (NIP-17)"),
-                    Err(e) => println!("  → send failed: {e}"),
                 }
             }
 
