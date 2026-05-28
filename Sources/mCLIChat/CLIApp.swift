@@ -1,6 +1,15 @@
 import Foundation
 import mChatCore
 
+/// Thread-safe cache mapping pubkey hex → display name.
+private actor NameCache {
+    private var names: [String: String] = [:]
+
+    func name(for pubkey: String) -> String? { names[pubkey] }
+    func store(_ name: String, for pubkey: String) { names[pubkey] = name }
+    func remove(for pubkey: String) { names.removeValue(forKey: pubkey) }
+}
+
 @main
 struct CLIApp {
     static func main() async {
@@ -23,11 +32,26 @@ struct CLIApp {
         try await backend.connect()
         print("Connected.\n")
 
+        let nameCache = NameCache()
+
         // Background task: print incoming messages as they arrive
         Task {
             for await msg in await backend.incomingMessages() {
-                let from = String(msg.senderIdentifier.prefix(12))
-                print("\n[\(shortTime(msg.timestamp))] \(from)…: \(msg.content)")
+                let pubkey = msg.senderIdentifier
+                let display: String
+                if let cached = await nameCache.name(for: pubkey) {
+                    display = cached
+                } else {
+                    display = String(pubkey.prefix(12)) + "…"
+                    // Fetch kind:0 in background; next message will show the name
+                    Task {
+                        if let contact = try? await backend.resolveContact(identifier: pubkey),
+                           let name = contact.displayName {
+                            await nameCache.store(name, for: pubkey)
+                        }
+                    }
+                }
+                print("\n[\(shortTime(msg.timestamp))] \(display): \(msg.content)")
                 printPrompt()
             }
         }
