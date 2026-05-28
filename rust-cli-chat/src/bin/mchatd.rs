@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    publish_profile(&client, "mchatd", "Rust echo daemon — replies with 'echo: <message>'").await;
+    publish_profile(&client, "mRustChatd", "Rust echo daemon — replies with 'echo: <message>'").await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
     let mut seen: HashSet<EventId> = HashSet::new();
