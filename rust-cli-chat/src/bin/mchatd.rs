@@ -65,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
+    publish_profile(&client, "mchatd", "Rust echo daemon — replies with 'echo: <message>'").await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
     let mut seen: HashSet<EventId> = HashSet::new();
@@ -124,6 +125,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn publish_profile(client: &Client, name: &str, about: &str) {
+    let content = serde_json::json!({ "name": name, "about": about }).to_string();
+    let builder = EventBuilder::new(Kind::Metadata, content, []);
+    match client.send_event_builder(builder).await {
+        Ok(_) => println!("Profile published: {name}"),
+        Err(e) => eprintln!("[warn] Profile publish failed: {e}"),
+    }
 }
 
 fn shorten(hex: &str) -> String {
