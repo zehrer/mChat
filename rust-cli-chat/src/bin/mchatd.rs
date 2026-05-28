@@ -1,5 +1,5 @@
 use nostr_sdk::prelude::*;
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
 
 const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.damus.io",
@@ -67,10 +67,15 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
+    let mut seen: HashSet<EventId> = HashSet::new();
+
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Event { event, .. } = notification else {
             continue;
         };
+        if !seen.insert(event.id) {
+            continue;
+        }
 
         match event.kind {
             Kind::EncryptedDirectMessage => {
