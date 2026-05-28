@@ -52,6 +52,13 @@ public actor NostrBackend: MessagingBackend {
         incomingStream
     }
 
+    public func publishProfile(name: String, about: String?) async throws {
+        let event = try NostrEvent.metadata(
+            name: name, about: about, picture: nil, nip05: nil, keyPair: keyPair
+        )
+        await client.publish(event: event)
+    }
+
     public func loadHistory(for conversation: Conversation, limit: Int) async throws -> [ChatMessage] {
         // History is fetched live from relays; a local SwiftData cache should be
         // the primary source in the app layer (see MessageStore).
