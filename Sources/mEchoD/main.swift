@@ -1,9 +1,11 @@
 import Foundation
+import Glibc
 import mChatCore
 
 @main
 struct EchoDaemon {
     static func main() async {
+        setbuf(stdout, nil)  // unbuffer so log lines flush immediately when piped
         do {
             try await run()
         } catch {

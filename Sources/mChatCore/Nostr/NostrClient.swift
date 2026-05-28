@@ -15,6 +15,7 @@ public actor NostrClient {
     private var relays: [URL: NostrRelay] = [:]
     private var eventHandlers: [String: (NostrEvent) async -> Void] = [:]
     private var relayTasks: [URL: Task<Void, Never>] = [:]
+    private var seenEventIds: Set<String> = []
 
     public init() {}
 
@@ -79,6 +80,7 @@ public actor NostrClient {
     private func handle(_ message: RelayMessage, from relay: NostrRelay) async {
         if case .event(let subId, let event) = message,
            let handler = eventHandlers[subId] {
+            guard seenEventIds.insert(event.id).inserted else { return }
             await handler(event)
         }
     }
