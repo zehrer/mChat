@@ -2,12 +2,19 @@ mod contacts;
 
 use nostr_sdk::prelude::*;
 use std::{
+    collections::HashMap,
     fs,
     io::{self as stdio, Write},
     path::PathBuf,
+    sync::Arc,
     time::Duration,
 };
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    sync::RwLock,
+};
+
+type NameCache = Arc<RwLock<HashMap<String, String>>>;
 
 const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.damus.io",
@@ -178,15 +185,49 @@ fn format_time(ts: Timestamp) -> String {
     format!("{:02}:{:02}", (secs % 86400) / 3600, (secs % 3600) / 60)
 }
 
-fn print_msg(from_hex: &str, ts: Timestamp, content: &str, live: bool) {
-    let from = if from_hex.len() >= 12 { &from_hex[..12] } else { from_hex };
+fn print_msg(display: &str, ts: Timestamp, content: &str, live: bool) {
     let time = format_time(ts);
     if live {
-        print!("\r[{time}] {from}…: {content}\n> ");
+        print!("\r[{time}] {display}: {content}\n> ");
     } else {
-        print!("[{time}] {from}…: {content}\n");
+        print!("[{time}] {display}: {content}\n");
     }
     stdio::stdout().flush().ok();
+}
+
+/// Fetches the Nostr display name (kind:0) for a pubkey. Returns None if unavailable.
+async fn fetch_name(client: &Client, pubkey: &PublicKey) -> Option<String> {
+    let filter = Filter::new().author(*pubkey).kind(Kind::Metadata).limit(1);
+    let events = client
+        .fetch_events(vec![filter], Some(Duration::from_secs(3)))
+        .await
+        .ok()?;
+    let event = events.first()?;
+    let meta: serde_json::Value = serde_json::from_str(&event.content).ok()?;
+    meta.get("display_name")
+        .or_else(|| meta.get("name"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Returns a display name from the cache. If not cached, triggers a background
+/// fetch and returns a truncated pubkey hex in the meantime.
+async fn cached_name(pubkey_hex: &str, cache: &NameCache, client: &Client) -> String {
+    if let Some(name) = cache.read().await.get(pubkey_hex) {
+        return name.clone();
+    }
+    let hex = pubkey_hex.to_string();
+    let cache = cache.clone();
+    let client = client.clone();
+    tokio::spawn(async move {
+        if let Ok(pk) = PublicKey::parse(&hex) {
+            if let Some(name) = fetch_name(&client, &pk).await {
+                cache.write().await.insert(hex, name);
+            }
+        }
+    });
+    format!("{}…", &pubkey_hex[..12.min(pubkey_hex.len())])
 }
 
 fn prompt() {
@@ -232,17 +273,33 @@ async fn main() -> anyhow::Result<()> {
         .limit(50);
     client.subscribe(vec![filter_nip04, filter_nip17], None).await?;
 
+    // Name cache: pubkey hex → display name. Pre-seeded from contact aliases.
+    let name_cache: NameCache = Arc::new(RwLock::new(HashMap::new()));
+    {
+        let book = contacts::load();
+        let mut lock = name_cache.write().await;
+        for (alias, pubkey_str) in &book {
+            if let Ok(pk) = PublicKey::parse(pubkey_str) {
+                lock.insert(pk.to_hex(), alias.clone());
+            }
+        }
+    }
+
     let sk = keys.secret_key().to_owned();
     let client_clone = client.clone();
+    let cache_clone = name_cache.clone();
     tokio::spawn(async move {
+        let mut seen: std::collections::HashSet<EventId> = std::collections::HashSet::new();
         let mut history_done = false;
         while let Ok(notification) = notifications.recv().await {
             match notification {
                 RelayPoolNotification::Event { event, .. } => {
+                    if !seen.insert(event.id) { continue; }
                     if event.kind == Kind::EncryptedDirectMessage {
                         // NIP-04
                         if let Ok(content) = nip04::decrypt(&sk, &event.pubkey, &event.content) {
-                            print_msg(&event.pubkey.to_hex(), event.created_at, &content, history_done);
+                            let display = cached_name(&event.pubkey.to_hex(), &cache_clone, &client_clone).await;
+                            print_msg(&display, event.created_at, &content, history_done);
                         }
                     } else if event.kind == Kind::GiftWrap {
                         // NIP-17 — unwrap gift, extract rumor content
@@ -250,7 +307,8 @@ async fn main() -> anyhow::Result<()> {
                             let content = unwrapped.rumor.content.clone();
                             let sender = unwrapped.sender.to_hex();
                             let ts = unwrapped.rumor.created_at;
-                            print_msg(&sender, ts, &content, history_done);
+                            let display = cached_name(&sender, &cache_clone, &client_clone).await;
+                            print_msg(&display, ts, &content, history_done);
                         }
                     }
                 }
@@ -326,8 +384,9 @@ async fn main() -> anyhow::Result<()> {
                     println!("Usage: add <alias> <npub or pubkey hex>");
                 } else {
                     match PublicKey::parse(&rest) {
-                        Ok(_) => {
+                        Ok(pk) => {
                             book.insert(arg1.clone(), rest.clone());
+                            name_cache.write().await.insert(pk.to_hex(), arg1.clone());
                             if let Err(e) = contacts::save(&book) {
                                 println!("Save failed: {e}");
                             } else {
@@ -342,7 +401,10 @@ async fn main() -> anyhow::Result<()> {
             "remove" => {
                 if arg1.is_empty() {
                     println!("Usage: remove <alias>");
-                } else if book.remove(&arg1).is_some() {
+                } else if let Some(pubkey_str) = book.remove(&arg1) {
+                    if let Ok(pk) = PublicKey::parse(&pubkey_str) {
+                        name_cache.write().await.remove(&pk.to_hex());
+                    }
                     contacts::save(&book).ok();
                     println!("Removed: {arg1}");
                 } else {
