@@ -16,7 +16,7 @@ struct EchoDaemon {
 
     static func run() async throws {
         let keyPair = try loadOrCreateKeyPair()
-        print("mEchoD pubkey : \(keyPair.publicKeyHex)")
+        print("mSwiftChatd pubkey : \(keyPair.publicKeyHex)")
 
         let backend = NostrBackend(keyPair: keyPair)
         print("Connecting to relays…")
