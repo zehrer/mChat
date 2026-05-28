@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "mChatCore", targets: ["mChatCore"]),
         .executable(name: "mCLIChat", targets: ["mCLIChat"]),
+        .executable(name: "mEchoD", targets: ["mEchoD"]),
     ],
     dependencies: [
         // secp256k1 for Nostr keypairs, Schnorr signing, and ECDH
@@ -35,6 +36,11 @@ let package = Package(
             name: "mCLIChat",
             dependencies: ["mChatCore"],
             path: "Sources/mCLIChat"
+        ),
+        .executableTarget(
+            name: "mEchoD",
+            dependencies: ["mChatCore"],
+            path: "Sources/mEchoD"
         ),
         .testTarget(
             name: "mChatCoreTests",
