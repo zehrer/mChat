@@ -39,6 +39,31 @@ public struct ChatMessage: Identifiable, Sendable, Codable, Equatable {
 // MARK: - Nostr convenience
 
 extension ChatMessage {
+    /// Creates a ChatMessage from a NIP-17 gift-wrap event (kind 1059).
+    public static func fromNostrGiftWrap(
+        event: NostrEvent,
+        myPubkeyHex: String,
+        myPrivkeyBytes: Data
+    ) throws -> ChatMessage {
+        let dm = try NostrEvent.unwrapGiftWrap(
+            event: event,
+            myPubkeyHex: myPubkeyHex,
+            myPrivkeyBytes: myPrivkeyBytes
+        )
+        let fromMe = dm.senderPubkey == myPubkeyHex
+        let otherPubkey = fromMe ? dm.recipientPubkey : dm.senderPubkey
+        let conv = Conversation(protocol: .nostr, type: .oneToOne(peerIdentifier: otherPubkey))
+        return ChatMessage(
+            id: dm.rumorId,
+            conversationId: conv.id,
+            senderIdentifier: dm.senderPubkey,
+            content: dm.content,
+            timestamp: dm.timestamp,
+            fromMe: fromMe,
+            protocol: .nostr
+        )
+    }
+
     /// Creates a ChatMessage from a NIP-04 DM event.
     public static func fromNostrDM(
         event: NostrEvent,
