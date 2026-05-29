@@ -53,9 +53,14 @@ async fn main() -> anyhow::Result<()> {
 
     client
         .subscribe(
-            vec![Filter::new()
-                .pubkey(keys.public_key())
-                .kind(Kind::EncryptedDirectMessage)],
+            vec![
+                Filter::new()
+                    .pubkey(keys.public_key())
+                    .kind(Kind::EncryptedDirectMessage),
+                Filter::new()
+                    .pubkey(keys.public_key())
+                    .kind(Kind::GiftWrap),
+            ],
             None,
         )
         .await?;
@@ -97,6 +102,21 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => println!("  → encrypt failed: {e}"),
+                }
+            }
+
+            Kind::GiftWrap => {
+                let Ok(unwrapped) = client.unwrap_gift_wrap(&event).await else {
+                    continue;
+                };
+                let inner = &unwrapped.rumor;
+                let from = shorten(&inner.pubkey.to_hex());
+                println!("[NIP-17] {from}: {}", inner.content);
+
+                let reply = format!("echo: {}", inner.content);
+                match client.send_private_msg(inner.pubkey, &reply, None).await {
+                    Ok(_) => println!("  → echoed (NIP-17)"),
+                    Err(e) => println!("  → send failed: {e}"),
                 }
             }
 
