@@ -239,8 +239,8 @@ extension NostrEvent {
             senderPrivkey: keyPair.privateKeyBytes,
             recipientPubkeyHex: recipientPubkey
         )
-        // Randomize created_at ±2 days to obscure timing (NIP-17 requirement)
-        let ts = Int(Date().timeIntervalSince1970) + Int.random(in: -172800...172800)
+        // Randomize created_at up to 2 days in the past to obscure timing (NIP-17 requirement)
+        let ts = Int(Date().timeIntervalSince1970) - Int.random(in: 0...172800)
         return try build(kind: NostrKind.seal.rawValue, tags: [], content: encrypted,
                          keyPair: keyPair, createdAt: ts)
     }
@@ -252,7 +252,7 @@ extension NostrEvent {
             senderPrivkey: ephemeralKeyPair.privateKeyBytes,
             recipientPubkeyHex: recipientPubkey
         )
-        let ts = Int(Date().timeIntervalSince1970) + Int.random(in: -172800...172800)
+        let ts = Int(Date().timeIntervalSince1970) - Int.random(in: 0...172800)
         return try build(kind: NostrKind.giftWrap.rawValue,
                          tags: [["p", recipientPubkey]],
                          content: encrypted,
