@@ -24,7 +24,7 @@ public enum NIP44 {
         let keys = messageKeys(conversationKey: convKey, nonce: nonce)
         let padded = pad(plaintext)
         let ciphertext = try chacha20(padded, key: keys.chacha, nonce: keys.nonce)
-        let mac = computeHMAC(version: versionByte, nonce: nonce, ciphertext: ciphertext, key: keys.hmac)
+        let mac = computeHMAC(nonce: nonce, ciphertext: ciphertext, key: keys.hmac)
         return (Data([versionByte]) + nonce + ciphertext + mac).base64EncodedString()
     }
 
@@ -45,9 +45,8 @@ public enum NIP44 {
         let convKey = try conversationKey(privateKey: recipientPrivkey, pubkeyHex: senderPubkeyHex)
         let keys = messageKeys(conversationKey: convKey, nonce: nonce)
 
-        guard verifyHMAC(
-            version: versionByte, nonce: nonce, ciphertext: ciphertext,
-            key: keys.hmac, expected: receivedMAC
+        guard verifyHMAC(nonce: nonce, ciphertext: ciphertext,
+                         key: keys.hmac, expected: receivedMAC
         ) else { throw NostrError.decryptionFailed }
 
         let padded = try chacha20(ciphertext, key: keys.chacha, nonce: keys.nonce)
@@ -55,6 +54,23 @@ public enum NIP44 {
     }
 
     // MARK: - Key derivation
+
+    // Decrypt using a pre-derived conversation key — used for spec vector tests.
+    static func decryptWithConversationKey(payload: String, conversationKey: Data) throws -> String {
+        guard let data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters) else {
+            throw NostrError.decryptionFailed
+        }
+        guard data.count >= 99, data[0] == versionByte else { throw NostrError.decryptionFailed }
+        let nonce       = Data(data[1..<33])
+        let ciphertext  = Data(data[33..<(data.count - 32)])
+        let receivedMAC = Data(data[(data.count - 32)...])
+        let keys = messageKeys(conversationKey: conversationKey, nonce: nonce)
+        guard verifyHMAC(nonce: nonce, ciphertext: ciphertext,
+                         key: keys.hmac, expected: receivedMAC
+        ) else { throw NostrError.decryptionFailed }
+        let padded = try chacha20(ciphertext, key: keys.chacha, nonce: keys.nonce)
+        return try unpad(padded)
+    }
 
     // Internal so NostrEvent can reuse it for gift-wrap ephemeral keys if needed.
     static func conversationKey(privateKey: Data, pubkeyHex: String) throws -> Data {
@@ -100,14 +116,15 @@ public enum NIP44 {
 
     // MARK: - HMAC-SHA256
 
-    private static func computeHMAC(version: UInt8, nonce: Data, ciphertext: Data, key: Data) -> Data {
-        let msg = Data([version]) + nonce + ciphertext
+    private static func computeHMAC(nonce: Data, ciphertext: Data, key: Data) -> Data {
+        // NIP-44 spec: MAC = HMAC-SHA256(key=hmac_key, data=nonce || ciphertext)
+        let msg = nonce + ciphertext
         let code = Crypto.HMAC<Crypto.SHA256>.authenticationCode(for: msg, using: SymmetricKey(data: key))
         return Data(code)
     }
 
-    private static func verifyHMAC(version: UInt8, nonce: Data, ciphertext: Data, key: Data, expected: Data) -> Bool {
-        let msg = Data([version]) + nonce + ciphertext
+    private static func verifyHMAC(nonce: Data, ciphertext: Data, key: Data, expected: Data) -> Bool {
+        let msg = nonce + ciphertext
         return Crypto.HMAC<Crypto.SHA256>.isValidAuthenticationCode(expected, authenticating: msg, using: SymmetricKey(data: key))
     }
 
