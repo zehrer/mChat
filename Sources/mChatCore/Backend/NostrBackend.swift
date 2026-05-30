@@ -53,6 +53,11 @@ public actor NostrBackend: MessagingBackend {
         incomingStream
     }
 
+    public func publishRelayList() async throws {
+        let event = try NostrEvent.relayList(relays: NostrClient.defaultRelays, keyPair: keyPair)
+        await client.publish(event: event)
+    }
+
     public func publishProfile(name: String, about: String?) async throws {
         let event = try NostrEvent.metadata(
             name: name, about: about, picture: nil, nip05: nil, keyPair: keyPair

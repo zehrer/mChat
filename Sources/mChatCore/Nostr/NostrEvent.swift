@@ -8,14 +8,15 @@ import Crypto
 // MARK: - Event kinds (NIP-01, NIP-04, NIP-17)
 
 public enum NostrKind: Int, Codable, Sendable {
-    case metadata         = 0    // NIP-01 user profile
-    case textNote         = 1    // NIP-01 plaintext note
-    case encryptedDM      = 4    // NIP-04 encrypted direct message
-    case repost           = 6    // NIP-18
-    case reaction         = 7    // NIP-25
-    case seal             = 13   // NIP-17 sealed sender
-    case giftWrap         = 1059 // NIP-17 gift-wrap outer envelope
-    case channelMessage   = 42   // NIP-28
+    case metadata         = 0     // NIP-01 user profile
+    case textNote         = 1     // NIP-01 plaintext note
+    case encryptedDM      = 4     // NIP-04 encrypted direct message
+    case repost           = 6     // NIP-18
+    case reaction         = 7     // NIP-25
+    case seal             = 13    // NIP-17 sealed sender
+    case relayList        = 10002 // NIP-65 relay list
+    case giftWrap         = 1059  // NIP-17 gift-wrap outer envelope
+    case channelMessage   = 42    // NIP-28
 }
 
 // MARK: - NostrEvent
@@ -81,6 +82,13 @@ extension NostrEvent {
         let json = try JSONSerialization.data(withJSONObject: fields)
         let content = String(data: json, encoding: .utf8)!
         return try build(kind: NostrKind.metadata.rawValue, tags: [], content: content, keyPair: keyPair)
+    }
+
+    /// Creates and signs a kind-10002 relay list event (NIP-65).
+    /// Tells other clients which relays to use when sending to this identity.
+    public static func relayList(relays: [URL], keyPair: NostrKeyPair) throws -> NostrEvent {
+        let tags = relays.map { ["r", $0.absoluteString] }
+        return try build(kind: NostrKind.relayList.rawValue, tags: tags, content: "", keyPair: keyPair)
     }
 
     // MARK: - Private helpers
