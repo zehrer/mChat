@@ -137,7 +137,10 @@ extension NostrEvent {
         let tagsArray = tags as NSArray
         let tagsData = try JSONSerialization.data(withJSONObject: tagsArray,
                                                    options: [.sortedKeys])
+        // Strip `\/` → `/`: Linux JSONSerialization escapes forward slashes, but relays
+        // (Go/JS) don't — causing hash mismatches. Forward slashes need no escaping in JSON.
         let tagsStr = String(data: tagsData, encoding: .utf8)!
+            .replacingOccurrences(of: "\\/", with: "/")
         // Escape content string for embedding in JSON without a full serializer
         let escapedContent = content.jsonStringEscaped
         return "[0,\"\(pubkey)\",\(createdAt),\(kind),\(tagsStr),\"\(escapedContent)\"]"

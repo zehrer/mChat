@@ -70,18 +70,40 @@ public actor NostrClient {
 
     /// Broadcasts an event to all connected relays.
     public func publish(event: NostrEvent) async {
-        for relay in relays.values {
-            try? await relay.publish(event: event)
+        for (url, relay) in relays {
+            do {
+                try await relay.publish(event: event)
+                #if DEBUG
+                print("[relay] sent kind:\(event.kind) \(event.id.prefix(8))… → \(url.host ?? url.absoluteString)")
+                #endif
+            } catch {
+                print("[relay] publish FAILED to \(url.host ?? url.absoluteString): \(error)")
+            }
         }
     }
 
     // MARK: - Private
 
     private func handle(_ message: RelayMessage, from relay: NostrRelay) async {
-        if case .event(let subId, let event) = message,
-           let handler = eventHandlers[subId] {
-            guard seenEventIds.insert(event.id).inserted else { return }
-            await handler(event)
+        switch message {
+        case .event(let subId, let event):
+            if let handler = eventHandlers[subId] {
+                guard seenEventIds.insert(event.id).inserted else { return }
+                await handler(event)
+            }
+        case .ok(let eventId, let accepted, let msg):
+            #if DEBUG
+            let status = accepted ? "✓" : "✗"
+            print("[relay OK] \(status) \(eventId.prefix(8))… \(msg)")
+            #endif
+            _ = (eventId, accepted, msg)
+        case .notice(let text):
+            #if DEBUG
+            print("[relay NOTICE] \(text)")
+            #endif
+            _ = text
+        default:
+            break
         }
     }
 }

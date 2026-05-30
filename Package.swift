@@ -27,6 +27,9 @@ let package = Package(
                 .product(name: "_CryptoExtras", package: "swift-crypto"),
             ],
             path: "Sources/mChatCore",
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug)),
+            ],
             linkerSettings: [
                 // CommonCrypto is used for AES-256-CBC (NIP-04 encryption) on Apple platforms
                 .linkedLibrary("CommonCrypto", .when(platforms: [.iOS, .macOS])),
@@ -35,12 +38,18 @@ let package = Package(
         .executableTarget(
             name: "mCLIChat",
             dependencies: ["mChatCore"],
-            path: "Sources/mCLIChat"
+            path: "Sources/mCLIChat",
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug)),
+            ]
         ),
         .executableTarget(
             name: "mSwiftChatd",
             dependencies: ["mChatCore"],
-            path: "Sources/mSwiftChatd"
+            path: "Sources/mSwiftChatd",
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug)),
+            ]
         ),
         .testTarget(
             name: "mChatCoreTests",
