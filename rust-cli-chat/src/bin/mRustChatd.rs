@@ -90,19 +90,9 @@ async fn main() -> anyhow::Result<()> {
                 println!("[NIP-04] {from}: {plain}");
 
                 let reply = format!("echo: {plain}");
-                match nip04::encrypt(keys.secret_key(), &event.pubkey, &reply) {
-                    Ok(encrypted) => {
-                        let builder = EventBuilder::new(
-                            Kind::EncryptedDirectMessage,
-                            encrypted,
-                            [Tag::public_key(event.pubkey)],
-                        );
-                        match client.send_event_builder(builder).await {
-                            Ok(_) => println!("  → echoed (NIP-04)"),
-                            Err(e) => println!("  → send failed: {e}"),
-                        }
-                    }
-                    Err(e) => println!("  → encrypt failed: {e}"),
+                match client.send_private_msg(event.pubkey, &reply, None).await {
+                    Ok(_) => println!("  → echoed (NIP-17)"),
+                    Err(e) => println!("  → send failed: {e}"),
                 }
             }
 
