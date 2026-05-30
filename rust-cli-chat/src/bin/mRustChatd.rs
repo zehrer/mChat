@@ -66,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     publish_profile(&client, "mRustChatd", "Rust echo daemon — replies with 'echo: <message>'").await;
+    publish_relay_list(&client, DEFAULT_RELAYS).await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
     let mut seen: HashSet<EventId> = HashSet::new();
@@ -133,6 +134,18 @@ async fn publish_profile(client: &Client, name: &str, about: &str) {
     match client.send_event_builder(builder).await {
         Ok(_) => println!("Profile published: {name}"),
         Err(e) => eprintln!("[warn] Profile publish failed: {e}"),
+    }
+}
+
+async fn publish_relay_list(client: &Client, relays: &[&str]) {
+    let tags: Vec<Tag> = relays
+        .iter()
+        .map(|r| Tag::parse(&["r", r]).unwrap())
+        .collect();
+    let builder = EventBuilder::new(Kind::RelayList, "", tags);
+    match client.send_event_builder(builder).await {
+        Ok(_) => println!("Relay list published (NIP-65)"),
+        Err(e) => eprintln!("[warn] Relay list publish failed: {e}"),
     }
 }
 
