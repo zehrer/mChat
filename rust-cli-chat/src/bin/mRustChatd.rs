@@ -47,9 +47,9 @@ fn load_profile() -> (String, String) {
 }
 
 const DEFAULT_RELAYS: &[&str] = &[
-    "wss://purplepag.es",
-    "wss://nostr.wine",
     "wss://nos.lol",
+    "wss://relay.damus.io",
+    "wss://relay.primal.net",
 ];
 
 fn key_path() -> PathBuf {
