@@ -2,10 +2,12 @@ import Foundation
 import Glibc
 import mChatCore
 
+private let kVersion = "mSwiftChatd v0.0.2"
+
 @main
 struct EchoDaemon {
     static func main() async {
-        setbuf(stdout, nil)  // unbuffer so log lines flush immediately when piped
+        setbuf(stdout, nil)
         do {
             try await run()
         } catch {
@@ -29,26 +31,83 @@ struct EchoDaemon {
         print("Relay list published (NIP-65 + NIP-17)")
         print("Listening for DMs… Ctrl+C to stop.\n")
 
+        let startTime = Date()
+        var msgCount = 0
+        var knownSenders: Set<String> = []
+
         for await msg in await backend.incomingMessages() {
             guard !msg.fromMe else { continue }
             let from = String(msg.senderIdentifier.prefix(12))
             print("[\(shortTime(msg.timestamp))] \(from)…: \(msg.content)")
 
-            let reply = "echo: \(msg.content)"
+            knownSenders.insert(msg.senderIdentifier)
+            msgCount += 1
+
+            let reply = dispatch(
+                msg.content,
+                startTime: startTime,
+                msgCount: msgCount,
+                knownSenders: knownSenders
+            )
             let conv = Conversation(
                 protocol: .nostr,
                 type: .oneToOne(peerIdentifier: msg.senderIdentifier)
             )
             do {
                 _ = try await backend.send(text: reply, in: conv)
-                print("  → echoed")
+                print("  → replied")
             } catch {
                 print("  → send failed: \(error)")
             }
         }
     }
 
-    // MARK: - Identity
+    // MARK: - Command dispatch
+
+    static func dispatch(_ text: String, startTime: Date, msgCount: Int, knownSenders: Set<String>) -> String {
+        guard text.hasPrefix("/") else { return "echo: \(text)" }
+        let parts = text.split(separator: " ", maxSplits: 1)
+        let cmd = String(parts[0])
+        let args = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : ""
+
+        switch cmd {
+        case "/ping":
+            return "pong"
+
+        case "/echo":
+            return args.isEmpty ? "(empty)" : args
+
+        case "/status":
+            let uptime = formatUptime(since: startTime)
+            let relays = NostrClient.defaultRelays.map { $0.host ?? $0.absoluteString }.joined(separator: ", ")
+            return """
+            \(kVersion)
+            Uptime: \(uptime)
+            Relays (\(NostrClient.defaultRelays.count)): \(relays)
+            Messages: \(msgCount)
+            Known senders: \(knownSenders.count)
+            """
+
+        case "/user":
+            if knownSenders.isEmpty { return "No known senders yet." }
+            let list = knownSenders.map { "• \(String($0.prefix(12)))…" }.joined(separator: "\n")
+            return "Known senders (\(knownSenders.count)):\n\(list)"
+
+        case "/help":
+            return """
+            /ping — alive check
+            /echo <text> — send text back
+            /status — daemon info
+            /user — known senders
+            /help — this message
+            """
+
+        default:
+            return "Unknown command: \(cmd)\nTry /help"
+        }
+    }
+
+    // MARK: - Helpers
 
     static func loadOrCreateKeyPair() throws -> NostrKeyPair {
         let dir = FileManager.default.homeDirectoryForCurrentUser
@@ -74,12 +133,20 @@ struct EchoDaemon {
         f.dateFormat = "HH:mm"
         return f.string(from: date)
     }
+
+    static func formatUptime(since start: Date) -> String {
+        let secs = Int(Date().timeIntervalSince(start))
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        let s = secs % 60
+        if h > 0 { return "\(h)h \(m)m \(s)s" }
+        if m > 0 { return "\(m)m \(s)s" }
+        return "\(s)s"
+    }
 }
 
 // MARK: - DaemonConfig
 
-/// Reads daemon configuration from ~/.mCLIChat/config.toml.
-/// Falls back to built-in defaults when the file is absent or a key is missing.
 struct DaemonConfig {
     let name: String
     let about: String
@@ -98,12 +165,11 @@ struct DaemonConfig {
 
     private static var defaults: DaemonConfig {
         DaemonConfig(
-            name:  "mSwiftChatd v0.0.1",
-            about: "Swift echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+            name:  kVersion,
+            about: "Swift Agent Daemon https://github.com/zehrer/mChat"
         )
     }
 
-    // Minimal TOML parser: flat key = "value" within named [sections]
     private static func parse(_ content: String, section: String) -> DaemonConfig {
         var inSection = false
         var values: [String: String] = [:]
@@ -132,15 +198,14 @@ struct DaemonConfig {
     private static func writeDefaultConfig(to url: URL) {
         let content = """
         # mChat daemon configuration
-        # Edit to customise the daemon profiles. Restart the daemon after changes.
 
         [swift]
-        name  = "mSwiftChatd v0.0.1"
-        about = "Swift echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+        name  = "\(kVersion)"
+        about = "Swift Agent Daemon https://github.com/zehrer/mChat"
 
         [rust]
-        name  = "mRustChatd v0.0.1"
-        about = "Rust echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+        name  = "mRustChatd v0.0.2"
+        about = "Rust Agent Daemon https://github.com/zehrer/mChat"
         """
         try? content.write(to: url, atomically: true, encoding: .utf8)
     }
