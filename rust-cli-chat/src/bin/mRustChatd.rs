@@ -45,13 +45,9 @@ fn load_profile() -> (String, String) {
 }
 
 const DEFAULT_RELAYS: &[&str] = &[
-    "wss://relay.damus.io",
-    "wss://relay.nostr.band",
-    "wss://nos.lol",
-    "wss://relay.snort.social",
-    "wss://nostr.wine",
-    "wss://relay.current.fyi",
     "wss://purplepag.es",
+    "wss://nostr.wine",
+    "wss://nos.lol",
 ];
 
 fn key_path() -> PathBuf {
