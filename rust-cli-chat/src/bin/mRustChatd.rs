@@ -317,4 +317,4 @@ async fn publish_dm_relay_list(client: &Client, relays: &[&str]) {
     }
 }
 
-fn shorten(hex: &str) -> String { format!("{}…", &hex[..12.min(hex.len())]) }
+fn shorten(hex: &str) -> String { format!("{}…", &hex[..16.min(hex.len())]) }
