@@ -111,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
     let (profile_name, profile_about) = load_profile();
     publish_profile(&client, &profile_name, &profile_about).await;
     publish_relay_list(&client, DEFAULT_RELAYS).await;
+    publish_dm_relay_list(&client, DEFAULT_RELAYS).await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
     let mut seen: HashSet<EventId> = HashSet::new();
@@ -180,6 +181,18 @@ async fn publish_relay_list(client: &Client, relays: &[&str]) {
     match client.send_event_builder(builder).await {
         Ok(_) => println!("Relay list published (NIP-65)"),
         Err(e) => eprintln!("[warn] Relay list publish failed: {e}"),
+    }
+}
+
+async fn publish_dm_relay_list(client: &Client, relays: &[&str]) {
+    let tags: Vec<Tag> = relays
+        .iter()
+        .map(|r| Tag::parse(&["relay", r]).unwrap())
+        .collect();
+    let builder = EventBuilder::new(Kind::Custom(10050), "", tags);
+    match client.send_event_builder(builder).await {
+        Ok(_) => println!("Relay list published (NIP-17)"),
+        Err(e) => eprintln!("[warn] DM relay list publish failed: {e}"),
     }
 }
 
