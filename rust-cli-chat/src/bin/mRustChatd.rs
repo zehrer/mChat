@@ -24,7 +24,7 @@ fn config_path() -> PathBuf {
 fn load_profile() -> (String, String) {
     let defaults = (
         "mRustChatd v0.0.1".to_string(),
-        "Rust echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat".to_string(),
+        "Rust Agent Daemon https://github.com/zehrer/mChat".to_string(),
     );
     let path = config_path();
     let content = match fs::read_to_string(&path) {
