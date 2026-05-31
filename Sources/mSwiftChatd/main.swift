@@ -21,7 +21,8 @@ struct EchoDaemon {
         let backend = NostrBackend(keyPair: keyPair)
         print("Connecting to relays…")
         try await backend.connect()
-        try await backend.publishProfile(name: "mSwiftChatd v0.0.1", about: "Swift echo daemon — replies with 'echo: <message>'")
+        let config = DaemonConfig.load(section: "swift")
+        try await backend.publishProfile(name: config.name, about: config.about)
         try await backend.publishRelayList()
         print("Profile and relay list published.")
         print("Connected. Listening for DMs…\n")
@@ -70,5 +71,75 @@ struct EchoDaemon {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: date)
+    }
+}
+
+// MARK: - DaemonConfig
+
+/// Reads daemon configuration from ~/.mCLIChat/config.toml.
+/// Falls back to built-in defaults when the file is absent or a key is missing.
+struct DaemonConfig {
+    let name: String
+    let about: String
+
+    static func load(section: String) -> DaemonConfig {
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".mCLIChat/config.toml")
+        if !FileManager.default.fileExists(atPath: configURL.path) {
+            writeDefaultConfig(to: configURL)
+        }
+        guard let content = try? String(contentsOf: configURL, encoding: .utf8) else {
+            return .defaults
+        }
+        return parse(content, section: section)
+    }
+
+    private static var defaults: DaemonConfig {
+        DaemonConfig(
+            name:  "mSwiftChatd v0.0.1",
+            about: "Swift echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+        )
+    }
+
+    // Minimal TOML parser: flat key = "value" within named [sections]
+    private static func parse(_ content: String, section: String) -> DaemonConfig {
+        var inSection = false
+        var values: [String: String] = [:]
+        for raw in content.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            if line.hasPrefix("[") {
+                inSection = (line == "[\(section)]")
+                continue
+            }
+            guard inSection else { continue }
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[line.startIndex..<eq].trimmingCharacters(in: .whitespaces)
+            var val = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if val.hasPrefix("\"") && val.hasSuffix("\"") {
+                val = String(val.dropFirst().dropLast())
+            }
+            values[key] = val
+        }
+        return DaemonConfig(
+            name:  values["name"]  ?? defaults.name,
+            about: values["about"] ?? defaults.about
+        )
+    }
+
+    private static func writeDefaultConfig(to url: URL) {
+        let content = """
+        # mChat daemon configuration
+        # Edit to customise the daemon profiles. Restart the daemon after changes.
+
+        [swift]
+        name  = "mSwiftChatd v0.0.1"
+        about = "Swift echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+
+        [rust]
+        name  = "mRustChatd v0.0.1"
+        about = "Rust echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat"
+        """
+        try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 }
