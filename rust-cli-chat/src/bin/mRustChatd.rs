@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    publish_profile(&client, "mRustChatd", "Rust echo daemon — replies with 'echo: <message>'").await;
+    publish_profile(&client, "mRustChatd v0.0.1", "Rust echo daemon — replies with 'echo: <message>'").await;
     publish_relay_list(&client, DEFAULT_RELAYS).await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
