@@ -4,11 +4,11 @@ import Foundation
 /// routes incoming events to subscribers.
 public actor NostrClient {
 
-    // MARK: - Public relay list (matches Stephan's NIP-17 DM relay list)
+    // MARK: - Public relay list (open relays, no auth required)
     public static let defaultRelays: [URL] = [
-        URL(string: "wss://purplepag.es")!,
-        URL(string: "wss://nostr.wine")!,
         URL(string: "wss://nos.lol")!,
+        URL(string: "wss://relay.damus.io")!,
+        URL(string: "wss://relay.primal.net")!,
     ]
 
     private var relays: [URL: NostrRelay] = [:]
