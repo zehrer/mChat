@@ -4,11 +4,10 @@ import Foundation
 /// routes incoming events to subscribers.
 public actor NostrClient {
 
-    // MARK: - Public relay list (well-known privacy-respecting relays)
+    // MARK: - Public relay list (matches Stephan's NIP-17 DM relay list)
     public static let defaultRelays: [URL] = [
-        URL(string: "wss://relay.damus.io")!,
+        URL(string: "wss://purplepag.es")!,
         URL(string: "wss://nostr.wine")!,
-        URL(string: "wss://relay.snort.social")!,
         URL(string: "wss://nos.lol")!,
     ]
 
@@ -87,9 +86,16 @@ public actor NostrClient {
     private func handle(_ message: RelayMessage, from relay: NostrRelay) async {
         switch message {
         case .event(let subId, let event):
+            #if DEBUG
+            print("[relay EVENT] kind:\(event.kind) \(event.id.prefix(8))… sub:\(subId.prefix(8))")
+            #endif
             if let handler = eventHandlers[subId] {
                 guard seenEventIds.insert(event.id).inserted else { return }
                 await handler(event)
+            } else {
+                #if DEBUG
+                print("[relay EVENT] no handler for sub:\(subId.prefix(8)) — registered: \(eventHandlers.keys.map { $0.prefix(8) })")
+                #endif
             }
         case .ok(let eventId, let accepted, let msg):
             #if DEBUG
