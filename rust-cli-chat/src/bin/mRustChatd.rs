@@ -1,6 +1,49 @@
 use nostr_sdk::prelude::*;
 use std::{collections::HashSet, fs, path::PathBuf};
 
+// MARK: - Config
+
+#[derive(serde::Deserialize, Default)]
+struct Config {
+    rust: Option<ProfileConfig>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProfileConfig {
+    name: Option<String>,
+    about: Option<String>,
+}
+
+fn config_path() -> PathBuf {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    home.join(".mCLIChat").join("config.toml")
+}
+
+fn load_profile() -> (String, String) {
+    let defaults = (
+        "mRustChatd v0.0.1".to_string(),
+        "Rust echo daemon — replies with 'echo: <message>' https://github.com/zehrer/mChat".to_string(),
+    );
+    let path = config_path();
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return defaults,
+    };
+    let config: Config = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(_) => return defaults,
+    };
+    match config.rust {
+        Some(p) => (
+            p.name.unwrap_or(defaults.0),
+            p.about.unwrap_or(defaults.1),
+        ),
+        None => defaults,
+    }
+}
+
 const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.damus.io",
     "wss://relay.nostr.band",
@@ -65,7 +108,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    publish_profile(&client, "mRustChatd v0.0.1", "Rust echo daemon — replies with 'echo: <message>'").await;
+    let (profile_name, profile_about) = load_profile();
+    publish_profile(&client, &profile_name, &profile_about).await;
     publish_relay_list(&client, DEFAULT_RELAYS).await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
