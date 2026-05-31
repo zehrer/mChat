@@ -21,7 +21,7 @@ struct EchoDaemon {
         let backend = NostrBackend(keyPair: keyPair)
         print("Connecting to relays…")
         try await backend.connect()
-        try await backend.publishProfile(name: "mSwiftChatd", about: "Swift echo daemon — replies with 'echo: <message>'")
+        try await backend.publishProfile(name: "mSwiftChatd v0.0.1", about: "Swift echo daemon — replies with 'echo: <message>'")
         try await backend.publishRelayList()
         print("Profile and relay list published.")
         print("Connected. Listening for DMs…\n")
