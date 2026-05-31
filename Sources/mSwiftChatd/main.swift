@@ -39,7 +39,7 @@ struct EchoDaemon {
 
         for await msg in await backend.incomingMessages() {
             guard !msg.fromMe else { continue }
-            let from = String(msg.senderIdentifier.prefix(12))
+            let from = String(msg.senderIdentifier.prefix(16))
 
             switch AccessControl.check(msg.senderIdentifier) {
             case .authorized:
@@ -125,9 +125,9 @@ struct EchoDaemon {
             let pending    = AccessControl.loadPending()
             let blocked    = AccessControl.loadLines(AccessControl.blockedURL)
             var lines: [String] = []
-            authorized.forEach { lines.append("[auth]    \(String($0.prefix(12)))…") }
-            pending.forEach    { lines.append("[pending] \(String($0.key.prefix(12)))… (\($0.value)/\(kSpamThreshold))") }
-            blocked.forEach    { lines.append("[blocked] \(String($0.prefix(12)))…") }
+            authorized.forEach { lines.append("[auth]    \(String($0.prefix(16)))…") }
+            pending.forEach    { lines.append("[pending] \(String($0.key.prefix(16)))… (\($0.value)/\(kSpamThreshold))") }
+            blocked.forEach    { lines.append("[blocked] \(String($0.prefix(16)))…") }
             return lines.isEmpty ? "No senders yet." : lines.sorted().joined(separator: "\n")
 
         case "/help":
