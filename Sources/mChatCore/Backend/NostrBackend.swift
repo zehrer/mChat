@@ -58,6 +58,11 @@ public actor NostrBackend: MessagingBackend {
         await client.publish(event: event)
     }
 
+    public func publishDMRelayList() async throws {
+        let event = try NostrEvent.dmRelayList(relays: NostrClient.defaultRelays, keyPair: keyPair)
+        await client.publish(event: event)
+    }
+
     public func publishProfile(name: String, about: String?) async throws {
         let event = try NostrEvent.metadata(
             name: name, about: about, picture: nil, nip05: nil, keyPair: keyPair
@@ -174,12 +179,16 @@ public actor NostrBackend: MessagingBackend {
 
         await client.subscribe(filter: filter) { [weak self] event in
             guard let self else { return }
-            guard let msg = try? ChatMessage.fromNostrGiftWrap(
-                event: event,
-                myPubkeyHex: myPubkey,
-                myPrivkeyBytes: privkeyBytes
-            ) else { return }
-            await self.yield(msg)
+            do {
+                let msg = try ChatMessage.fromNostrGiftWrap(
+                    event: event,
+                    myPubkeyHex: myPubkey,
+                    myPrivkeyBytes: privkeyBytes
+                )
+                await self.yield(msg)
+            } catch {
+                print("[giftwrap] decrypt FAILED \(event.id.prefix(8))…: \(error)")
+            }
         }
     }
 

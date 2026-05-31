@@ -24,8 +24,10 @@ struct EchoDaemon {
         let config = DaemonConfig.load(section: "swift")
         try await backend.publishProfile(name: config.name, about: config.about)
         try await backend.publishRelayList()
-        print("Profile and relay list published.")
-        print("Connected. Listening for DMs…\n")
+        try await backend.publishDMRelayList()
+        print("Profile published: \(config.name)")
+        print("Relay list published (NIP-65 + NIP-17)")
+        print("Listening for DMs… Ctrl+C to stop.\n")
 
         for await msg in await backend.incomingMessages() {
             guard !msg.fromMe else { continue }

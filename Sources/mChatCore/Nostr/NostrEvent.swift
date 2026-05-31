@@ -15,6 +15,7 @@ public enum NostrKind: Int, Codable, Sendable {
     case reaction         = 7     // NIP-25
     case seal             = 13    // NIP-17 sealed sender
     case relayList        = 10002 // NIP-65 relay list
+    case dmRelayList      = 10050 // NIP-17 DM inbox relay list
     case giftWrap         = 1059  // NIP-17 gift-wrap outer envelope
     case channelMessage   = 42    // NIP-28
 }
@@ -89,6 +90,14 @@ extension NostrEvent {
     public static func relayList(relays: [URL], keyPair: NostrKeyPair) throws -> NostrEvent {
         let tags = relays.map { ["r", $0.absoluteString] }
         return try build(kind: NostrKind.relayList.rawValue, tags: tags, content: "", keyPair: keyPair)
+    }
+
+    /// Creates and signs a kind-10050 DM relay list event (NIP-17).
+    /// Signals to other clients that this identity supports NIP-17 gift-wrap DMs,
+    /// and tells them which relays to use for delivering DMs.
+    public static func dmRelayList(relays: [URL], keyPair: NostrKeyPair) throws -> NostrEvent {
+        let tags = relays.map { ["relay", $0.absoluteString] }
+        return try build(kind: NostrKind.dmRelayList.rawValue, tags: tags, content: "", keyPair: keyPair)
     }
 
     // MARK: - Private helpers
