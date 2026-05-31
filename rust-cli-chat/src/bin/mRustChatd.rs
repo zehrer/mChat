@@ -1,5 +1,7 @@
 use nostr_sdk::prelude::*;
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf, time::Instant};
+
+const VERSION: &str = "mRustChatd v0.0.2";
 
 // MARK: - Config
 
@@ -23,7 +25,7 @@ fn config_path() -> PathBuf {
 
 fn load_profile() -> (String, String) {
     let defaults = (
-        "mRustChatd v0.0.1".to_string(),
+        VERSION.to_string(),
         "Rust Agent Daemon https://github.com/zehrer/mChat".to_string(),
     );
     let path = config_path();
@@ -75,6 +77,80 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
     Ok(keys)
 }
 
+// MARK: - Commands
+
+fn handle_command(
+    text: &str,
+    start_time: &Instant,
+    msg_count: u64,
+    known_senders: &HashSet<String>,
+) -> String {
+    let (cmd, args) = text
+        .split_once(' ')
+        .map(|(c, a)| (c, a.trim()))
+        .unwrap_or((text, ""));
+
+    match cmd {
+        "/ping" => "pong".to_string(),
+
+        "/echo" => {
+            if args.is_empty() {
+                "(empty)".to_string()
+            } else {
+                args.to_string()
+            }
+        }
+
+        "/status" => {
+            let uptime = format_uptime(start_time.elapsed());
+            let relays = DEFAULT_RELAYS.join(", ");
+            format!(
+                "{VERSION}\nUptime: {uptime}\nRelays ({n}): {relays}\nMessages: {msg_count}\nKnown senders: {senders}",
+                n = DEFAULT_RELAYS.len(),
+                senders = known_senders.len(),
+            )
+        }
+
+        "/user" => {
+            if known_senders.is_empty() {
+                "No known senders yet.".to_string()
+            } else {
+                let list = known_senders
+                    .iter()
+                    .map(|pk| format!("• {}", shorten(pk)))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("Known senders ({}):\n{}", known_senders.len(), list)
+            }
+        }
+
+        "/help" => {
+            "/ping — alive check\n\
+             /echo <text> — send text back\n\
+             /status — daemon info\n\
+             /user — known senders\n\
+             /help — this message"
+                .to_string()
+        }
+
+        _ => format!("Unknown command: {cmd}\nTry /help"),
+    }
+}
+
+fn format_uptime(d: std::time::Duration) -> String {
+    let s = d.as_secs();
+    let (h, m, s) = (s / 3600, (s % 3600) / 60, s % 60);
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
+// MARK: - Main
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let keys = load_or_create_keys()?;
@@ -110,7 +186,10 @@ async fn main() -> anyhow::Result<()> {
     publish_dm_relay_list(&client, DEFAULT_RELAYS).await;
     println!("Listening for DMs… Ctrl+C to stop.\n");
 
+    let start_time = Instant::now();
+    let mut msg_count: u64 = 0;
     let mut seen: HashSet<EventId> = HashSet::new();
+    let mut known_senders: HashSet<String> = HashSet::new();
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Event { event, .. } = notification else {
@@ -127,12 +206,15 @@ async fn main() -> anyhow::Result<()> {
                 else {
                     continue;
                 };
-                let from = shorten(&event.pubkey.to_hex());
+                let sender_hex = event.pubkey.to_hex();
+                known_senders.insert(sender_hex.clone());
+                msg_count += 1;
+                let from = shorten(&sender_hex);
                 println!("[NIP-04] {from}: {plain}");
 
-                let reply = format!("echo: {plain}");
+                let reply = dispatch(&plain, &start_time, msg_count, &known_senders);
                 match client.send_private_msg(event.pubkey, &reply, None).await {
-                    Ok(_) => println!("  → echoed (NIP-17)"),
+                    Ok(_) => println!("  → replied (NIP-17)"),
                     Err(e) => println!("  → send failed: {e}"),
                 }
             }
@@ -142,12 +224,15 @@ async fn main() -> anyhow::Result<()> {
                     continue;
                 };
                 let inner = &unwrapped.rumor;
-                let from = shorten(&inner.pubkey.to_hex());
+                let sender_hex = inner.pubkey.to_hex();
+                known_senders.insert(sender_hex.clone());
+                msg_count += 1;
+                let from = shorten(&sender_hex);
                 println!("[NIP-17] {from}: {}", inner.content);
 
-                let reply = format!("echo: {}", inner.content);
+                let reply = dispatch(&inner.content, &start_time, msg_count, &known_senders);
                 match client.send_private_msg(inner.pubkey, &reply, None).await {
-                    Ok(_) => println!("  → echoed (NIP-17)"),
+                    Ok(_) => println!("  → replied (NIP-17)"),
                     Err(e) => println!("  → send failed: {e}"),
                 }
             }
@@ -158,6 +243,16 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+fn dispatch(text: &str, start_time: &Instant, msg_count: u64, known_senders: &HashSet<String>) -> String {
+    if text.starts_with('/') {
+        handle_command(text, start_time, msg_count, known_senders)
+    } else {
+        format!("echo: {text}")
+    }
+}
+
+// MARK: - Publish helpers
 
 async fn publish_profile(client: &Client, name: &str, about: &str) {
     let content = serde_json::json!({ "name": name, "about": about }).to_string();
