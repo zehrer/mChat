@@ -167,25 +167,8 @@ struct EchoDaemon {
             }
             return "\(UserRegistry.displayName(info, pubkey: pubkey)) blocked."
 
-        case "/setrole":
-            guard callerRole == .admin else {
-                return "Permission denied: only admins can set roles."
-            }
-            let roleParts = args.split(separator: " ", maxSplits: 1)
-            guard roleParts.count == 2,
-                  let id = Int(roleParts[0]) else { return "Usage: /setrole <id> <admin|user>" }
-            let roleStr = String(roleParts[1])
-            guard let newRole = RoleStore.Role(rawValue: roleStr) else {
-                return "Role must be 'admin' or 'user'."
-            }
-            guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
-                return "No user with id #\(id)"
-            }
-            var roles = RoleStore.loadRoles(); roles[pubkey] = newRole; RoleStore.saveRoles(roles)
-            return "\(UserRegistry.displayName(info, pubkey: pubkey)) role set to \(roleStr)."
-
         case "/help":
-            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs, access state and role\n/authorize <id> — grant full access\n/block <id> — block a user (admin only)\n/setrole <id> <admin|user> — change role (admin only)\n/help — this message\nYour role: \(callerRole)"
+            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs, access state and role\n/authorize <id> — grant full access\n/block <id> — block a user (admin only)\n/help — this message\nYour role: \(callerRole)"
 
         default:
             return "Unknown command: \(cmd)\nTry /help"
@@ -295,9 +278,9 @@ struct RoleStore {
         if let data = try? JSONEncoder().encode(dict) { try? data.write(to: rolesURL) }
     }
 
-    // No explicit entry in roles.json → admin (manually added to whitelist)
+    // No explicit entry in roles.json → user (admin must be set locally in roles.json)
     static func getRole(_ pubkey: String) -> Role {
-        loadRoles()[pubkey] ?? .admin
+        loadRoles()[pubkey] ?? .user
     }
 }
 
