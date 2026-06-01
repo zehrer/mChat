@@ -36,13 +36,13 @@ run: stop run-swift run-rust
 	@echo "Both daemons started. Logs: $(SWIFT_LOG)  $(RUST_LOG)"
 
 run-swift: build-swift
-	@pkill -f mSwiftChatd 2>/dev/null; sleep 0.5 || true
-	nohup $(SWIFT_BIN)/debug/mSwiftChatd > $(SWIFT_LOG) 2>&1 &
+	@pkill -f mSwiftChatd 2>/dev/null || true; sleep 0.5
+	nohup $(SWIFT_BIN)/debug/mSwiftChatd >> $(SWIFT_LOG) 2>&1 &
 	@echo "mSwiftChatd started (debug). Log: $(SWIFT_LOG)"
 
 run-rust: build-rust
-	@pkill -f mRustChatd 2>/dev/null; sleep 0.5 || true
-	nohup $(RUST_BIN)/debug/mRustChatd > $(RUST_LOG) 2>&1 &
+	@pkill -f mRustChatd 2>/dev/null || true; sleep 0.5
+	nohup $(RUST_BIN)/debug/mRustChatd >> $(RUST_LOG) 2>&1 &
 	@echo "mRustChatd started (debug). Log: $(RUST_LOG)"
 
 # ---------------------------------------------------------------------------
@@ -53,13 +53,13 @@ run-release: stop run-swift-release run-rust-release
 	@echo "Both daemons started (release). Logs: $(SWIFT_LOG)  $(RUST_LOG)"
 
 run-swift-release: build-swift-release
-	@pkill -f mSwiftChatd 2>/dev/null; sleep 0.5 || true
-	nohup $(SWIFT_BIN)/release/mSwiftChatd > $(SWIFT_LOG) 2>&1 &
+	@pkill -f mSwiftChatd 2>/dev/null || true; sleep 0.5
+	nohup $(SWIFT_BIN)/release/mSwiftChatd >> $(SWIFT_LOG) 2>&1 &
 	@echo "mSwiftChatd started (release). Log: $(SWIFT_LOG)"
 
 run-rust-release: build-rust-release
-	@pkill -f mRustChatd 2>/dev/null; sleep 0.5 || true
-	nohup $(RUST_BIN)/release/mRustChatd > $(RUST_LOG) 2>&1 &
+	@pkill -f mRustChatd 2>/dev/null || true; sleep 0.5
+	nohup $(RUST_BIN)/release/mRustChatd >> $(RUST_LOG) 2>&1 &
 	@echo "mRustChatd started (release). Log: $(RUST_LOG)"
 
 # ---------------------------------------------------------------------------
