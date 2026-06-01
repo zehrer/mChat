@@ -209,6 +209,16 @@ about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 | REQ-43 | NIP-17 DM relay list (kind:10050) published on startup |
 | REQ-44 | Replies are sent as NIP-17 gift-wrap (kind:1059) |
 
+### 5.7 Connectivity & Resilience *(future — not yet implemented)*
+
+| ID | Requirement | Status |
+|---|---|---|
+| REQ-50 | The daemon detects when a relay connection drops and automatically reconnects | TODO |
+| REQ-51 | After reconnecting, active subscriptions are re-established without restart | TODO |
+| REQ-52 | The daemon detects when the host comes back online after a network outage (e.g. sleep/wake, ISP drop) and reconnects to all configured relays | TODO |
+| REQ-53 | On reconnect the startup grace period (REQ-15) is re-applied so relay backlog is not spam-counted | TODO |
+| REQ-54 | The admin is notified via DM when the daemon reconnects after an outage longer than a configurable threshold | TODO |
+
 ---
 
 ## 6. Testing
@@ -335,6 +345,9 @@ For each requirement below, perform the test after `make deploy` and verify agai
 |---|---|
 | v0.0.3 | Move daemon support types to `mChatCore`; add Swift unit tests (BUG-04) |
 | v0.0.3 | Fix Swift daemon message reception (BUG-01) |
+| v0.1.0 | Auto-reconnect on relay drop + re-subscribe (REQ-50, REQ-51) |
+| v0.1.0 | Network outage detection and reconnect with grace period re-apply (REQ-52, REQ-53) |
+| v0.1.0 | Admin DM notification on reconnect after outage (REQ-54) |
 | v0.1.0 | Periodic relay health check + automatic relay rotation |
 | v0.1.0 | Message log to file (`~/.mCLIChat/messages.log`) |
 | v0.2.0 | Optional private relay support (NIP-42 auth) |
@@ -348,3 +361,4 @@ For each requirement below, perform the test after `make deploy` and verify agai
 |---|---|---|
 | 0.1 | 2026-05-xx | Initial draft — access control, commands, roles |
 | 0.2 | 2026-06-01 | Add deploy/test make targets; Rust unit tests (29); startup grace period in both daemons; roles system; SDP written |
+| 0.3 | 2026-06-01 | Suspend mSwiftChatd; add REQ-50–54 (connectivity resilience, future); remote test plan |
