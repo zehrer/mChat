@@ -10,6 +10,10 @@ const STARTUP_GRACE_SECS: u64 = 15;
 // MARK: - Paths
 
 fn mclichat_dir() -> PathBuf {
+    // MCLICHAT_DIR overrides the default; used in unit tests to avoid touching prod data.
+    if let Ok(dir) = std::env::var("MCLICHAT_DIR") {
+        return PathBuf::from(dir);
+    }
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -506,3 +510,272 @@ async fn publish_dm_relay_list(client: &Client, relays: &[&str]) {
 }
 
 fn shorten(hex: &str) -> String { format!("{}…", &hex[..16.min(hex.len())]) }
+
+// MARK: - Tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    use std::sync::Mutex;
+
+    // Serialize all tests that touch the file system via MCLICHAT_DIR so they
+    // don't race on the process-wide environment variable.
+    static DIR_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_tmp_dir<F: FnOnce(&std::path::Path)>(f: F) {
+        let _guard = DIR_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("MCLICHAT_DIR", dir.path());
+        f(dir.path());
+        std::env::remove_var("MCLICHAT_DIR");
+    }
+
+    // ── format_uptime ────────────────────────────────────────────────────────
+
+    #[test]
+    fn uptime_seconds_only() {
+        assert_eq!(format_uptime(Duration::from_secs(0)),  "0s");
+        assert_eq!(format_uptime(Duration::from_secs(1)),  "1s");
+        assert_eq!(format_uptime(Duration::from_secs(59)), "59s");
+    }
+
+    #[test]
+    fn uptime_minutes() {
+        assert_eq!(format_uptime(Duration::from_secs(60)),   "1m 0s");
+        assert_eq!(format_uptime(Duration::from_secs(90)),   "1m 30s");
+        assert_eq!(format_uptime(Duration::from_secs(3599)), "59m 59s");
+    }
+
+    #[test]
+    fn uptime_hours() {
+        assert_eq!(format_uptime(Duration::from_secs(3600)),  "1h 0m 0s");
+        assert_eq!(format_uptime(Duration::from_secs(3661)),  "1h 1m 1s");
+        assert_eq!(format_uptime(Duration::from_secs(7322)),  "2h 2m 2s");
+    }
+
+    // ── shorten ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn shorten_64char_hex() {
+        let hex = "199a88c12350258a5ceeabb3c65b8e1576bab62f8ff05f9b1ba32c015d9fe15f";
+        let s = shorten(hex);
+        assert!(s.starts_with("199a88c12350258a"));
+        assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn shorten_short_input_no_panic() {
+        let s = shorten("abc");
+        assert_eq!(s, "abc…");
+    }
+
+    // ── display_name ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn display_name_prefers_nip05() {
+        let info = UserInfo { id: 1, nip05: "user@example.com".into(), name: "User".into() };
+        assert_eq!(display_name(&info, "aabbcc"), "#1 user@example.com");
+    }
+
+    #[test]
+    fn display_name_falls_back_to_name() {
+        let info = UserInfo { id: 2, nip05: "".into(), name: "Alice".into() };
+        assert_eq!(display_name(&info, "aabbcc"), "#2 Alice");
+    }
+
+    #[test]
+    fn display_name_truncates_pubkey() {
+        let info = UserInfo { id: 3, nip05: "".into(), name: "".into() };
+        let pk = "1234567890abcdef9999";
+        let result = display_name(&info, pk);
+        assert_eq!(result, "#3 (1234567890abcdef…)");
+    }
+
+    // ── dispatch ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn dispatch_plain_text_echoes() {
+        let t = Instant::now();
+        assert_eq!(dispatch("hello world", &Role::User, &t, 0), "echo: hello world");
+    }
+
+    #[test]
+    fn dispatch_routes_commands() {
+        let t = Instant::now();
+        assert_eq!(dispatch("/ping", &Role::User, &t, 0), "pong");
+    }
+
+    // ── commands ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cmd_ping() {
+        let t = Instant::now();
+        assert_eq!(handle_command("/ping", &Role::User, &t, 0), "pong");
+    }
+
+    #[test]
+    fn cmd_echo_with_args() {
+        let t = Instant::now();
+        assert_eq!(handle_command("/echo hello world", &Role::User, &t, 0), "hello world");
+    }
+
+    #[test]
+    fn cmd_echo_empty() {
+        let t = Instant::now();
+        assert_eq!(handle_command("/echo", &Role::User, &t, 0), "(empty)");
+    }
+
+    #[test]
+    fn cmd_unknown() {
+        let t = Instant::now();
+        let r = handle_command("/xyz", &Role::User, &t, 0);
+        assert!(r.contains("Unknown command: /xyz"));
+        assert!(r.contains("Try /help"));
+    }
+
+    #[test]
+    fn cmd_help_contains_all_commands() {
+        let t = Instant::now();
+        let r = handle_command("/help", &Role::Admin, &t, 0);
+        for cmd in &["/ping", "/echo", "/status", "/user", "/authorize", "/block", "/help"] {
+            assert!(r.contains(cmd), "help missing {cmd}");
+        }
+    }
+
+    #[test]
+    fn cmd_help_shows_role() {
+        let t = Instant::now();
+        assert!(handle_command("/help", &Role::Admin, &t, 0).contains("admin"));
+        assert!(handle_command("/help", &Role::User,  &t, 0).contains("user"));
+    }
+
+    #[test]
+    fn cmd_block_requires_admin() {
+        let t = Instant::now();
+        let r = handle_command("/block 1", &Role::User, &t, 0);
+        assert!(r.contains("Permission denied"));
+    }
+
+    #[test]
+    fn cmd_block_bad_arg() {
+        let t = Instant::now();
+        let r = handle_command("/block abc", &Role::Admin, &t, 0);
+        assert!(r.contains("Usage: /block"));
+    }
+
+    #[test]
+    fn cmd_authorize_bad_arg() {
+        let t = Instant::now();
+        let r = handle_command("/authorize abc", &Role::User, &t, 0);
+        assert!(r.contains("Usage: /authorize"));
+    }
+
+    // ── file-based tests (use MCLICHAT_DIR) ──────────────────────────────────
+
+    #[test]
+    fn load_pubkey_file_skips_comments_and_blanks() {
+        with_tmp_dir(|dir| {
+            let path = dir.join("test.txt");
+            fs::write(&path, "# comment\n\naabbccdd\n  # another\neeff1122\n").unwrap();
+            let set = load_pubkey_file(&path);
+            assert_eq!(set.len(), 2);
+            assert!(set.contains("aabbccdd"));
+            assert!(set.contains("eeff1122"));
+        });
+    }
+
+    #[test]
+    fn check_access_new_sender() {
+        with_tmp_dir(|_dir| {
+            let access = check_access("unknownpubkey");
+            assert!(matches!(access, Access::New));
+        });
+    }
+
+    #[test]
+    fn check_access_whitelisted() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            append_pubkey(&whitelist_path(), "authorizedkey");
+            assert!(matches!(check_access("authorizedkey"), Access::Authorized));
+        });
+    }
+
+    #[test]
+    fn check_access_blocked() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            append_pubkey(&blocked_path(), "blockedkey");
+            assert!(matches!(check_access("blockedkey"), Access::Blocked));
+        });
+    }
+
+    #[test]
+    fn check_access_pending() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            let mut p = HashMap::new();
+            p.insert("pendingkey".to_string(), 3u32);
+            save_pending(&p);
+            assert!(matches!(check_access("pendingkey"), Access::Pending(3)));
+        });
+    }
+
+    #[test]
+    fn check_access_whitelist_takes_priority_over_pending() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            append_pubkey(&whitelist_path(), "bothkey");
+            let mut p = HashMap::new();
+            p.insert("bothkey".to_string(), 2u32);
+            save_pending(&p);
+            assert!(matches!(check_access("bothkey"), Access::Authorized));
+        });
+    }
+
+    #[test]
+    fn get_role_defaults_to_user() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            assert_eq!(get_role("anypubkey"), Role::User);
+        });
+    }
+
+    #[test]
+    fn get_role_admin_from_file() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            let mut roles = HashMap::new();
+            roles.insert("adminkey".to_string(), Role::Admin);
+            save_roles(&roles);
+            assert_eq!(get_role("adminkey"), Role::Admin);
+        });
+    }
+
+    #[test]
+    fn ensure_whitelist_creates_file_with_header() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            assert!(!whitelist_path().exists());
+            ensure_whitelist();
+            assert!(whitelist_path().exists());
+            let content = fs::read_to_string(whitelist_path()).unwrap();
+            assert!(content.contains('#'), "header comment should be present");
+        });
+    }
+
+    #[test]
+    fn ensure_whitelist_is_idempotent() {
+        with_tmp_dir(|_dir| {
+            fs::create_dir_all(mclichat_dir()).unwrap();
+            fs::write(whitelist_path(), "existingkey\n").unwrap();
+            ensure_whitelist();
+            let content = fs::read_to_string(whitelist_path()).unwrap();
+            assert_eq!(content, "existingkey\n");
+        });
+    }
+}

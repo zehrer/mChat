@@ -5,6 +5,31 @@ SWIFT_LOG    := /tmp/swiftd_out.log
 RUST_LOG     := /tmp/mchatd_out.log
 
 # ---------------------------------------------------------------------------
+# deploy: full release build + restart (primary development loop)
+#   make deploy        — build both release binaries and restart daemons
+# ---------------------------------------------------------------------------
+.PHONY: deploy
+deploy: build-release stop
+	nohup $(SWIFT_BIN)/release/mSwiftChatd >> $(SWIFT_LOG) 2>&1 &
+	nohup $(RUST_BIN)/release/mRustChatd  >> $(RUST_LOG) 2>&1 &
+	@echo "Both release daemons restarted. Logs: $(SWIFT_LOG)  $(RUST_LOG)"
+
+# ---------------------------------------------------------------------------
+# test: run all unit tests
+# ---------------------------------------------------------------------------
+.PHONY: test test-swift test-rust test-rust-verbose
+test: test-swift test-rust
+
+test-swift:
+	$(SWIFT) test
+
+test-rust:
+	cd rust-cli-chat && cargo test --bin mRustChatd
+
+test-rust-verbose:
+	cd rust-cli-chat && cargo test --bin mRustChatd -- --nocapture
+
+# ---------------------------------------------------------------------------
 # Default: debug builds (verbose relay logging, faster compile)
 # ---------------------------------------------------------------------------
 .PHONY: build build-swift build-rust

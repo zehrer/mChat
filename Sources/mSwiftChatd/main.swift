@@ -2,8 +2,9 @@ import Foundation
 import Glibc
 import mChatCore
 
-private let kVersion        = "mSwiftChatd v0.0.2"
-private let kSpamThreshold  = 5
+private let kVersion           = "mSwiftChatd v0.0.2"
+private let kSpamThreshold     = 5
+private let kStartupGraceSecs  = 15.0   // seconds to ignore relay backlog on startup
 
 @main
 struct EchoDaemon {
@@ -55,6 +56,12 @@ struct EchoDaemon {
                 print("[blocked] \(label): ignored")
 
             case .pending(let count):
+                // Skip spam counting during startup grace period to avoid
+                // false auto-blocks from relay backlog replays.
+                guard Date().timeIntervalSince(startTime) >= kStartupGraceSecs else {
+                    print("[pending \(count)/\(kSpamThreshold)][grace] \(label): skipped")
+                    continue
+                }
                 let newCount = count + 1
                 print("[pending \(newCount)/\(kSpamThreshold)] \(label): \(msg.content)")
                 if newCount >= kSpamThreshold {
@@ -69,6 +76,12 @@ struct EchoDaemon {
                 }
 
             case .new:
+                // Skip welcome during startup grace period; relay backlog
+                // messages were already handled before the daemon restarted.
+                guard Date().timeIntervalSince(startTime) >= kStartupGraceSecs else {
+                    print("[new][grace] \(label): skipped")
+                    continue
+                }
                 AccessControl.addPending(msg.senderIdentifier)
                 print("[new] \(label): added to pending list")
                 let welcome = "Hello! This is \(kVersion).\nYour contact request has been received and is pending admin authorization.\n\nhttps://github.com/zehrer/mChat"
