@@ -20,13 +20,27 @@ fn mclichat_dir() -> PathBuf {
         .join(".mCLIChat")
 }
 
-fn config_path()    -> PathBuf { mclichat_dir().join("config.toml") }
-fn key_path()       -> PathBuf { mclichat_dir().join("mchatd.key") }
-fn whitelist_path() -> PathBuf { mclichat_dir().join("whitelist.txt") }
-fn blocked_path()   -> PathBuf { mclichat_dir().join("blocked.txt") }
-fn pending_path()   -> PathBuf { mclichat_dir().join("pending.json") }
-fn users_path()     -> PathBuf { mclichat_dir().join("users.json") }
-fn roles_path()     -> PathBuf { mclichat_dir().join("roles.json") }
+fn config_path()     -> PathBuf { mclichat_dir().join("config.toml") }
+fn key_path()        -> PathBuf { mclichat_dir().join("mchatd.key") }
+fn whitelist_path()  -> PathBuf { mclichat_dir().join("whitelist.txt") }
+fn blocked_path()    -> PathBuf { mclichat_dir().join("blocked.txt") }
+fn pending_path()    -> PathBuf { mclichat_dir().join("pending.json") }
+fn users_path()      -> PathBuf { mclichat_dir().join("users.json") }
+fn roles_path()      -> PathBuf { mclichat_dir().join("roles.json") }
+fn last_seen_path()  -> PathBuf { mclichat_dir().join("last_seen.txt") }
+
+// Persist the high-water mark across restarts so relay backlog isn't re-processed.
+// Defaults to now on first run to avoid processing historical backlog.
+fn load_last_seen() -> u64 {
+    fs::read_to_string(last_seen_path())
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or_else(|| Timestamp::now().as_u64())
+}
+
+fn save_last_seen(ts: u64) {
+    let _ = fs::write(last_seen_path(), ts.to_string());
+}
 
 // MARK: - Config
 
@@ -470,24 +484,34 @@ async fn main() -> anyhow::Result<()> {
     let start_time = Instant::now();
     let mut msg_count: u64 = 0;
     let mut seen: HashSet<EventId> = HashSet::new();
+    let mut last_seen_ts = load_last_seen();
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Event { event, .. } = notification else { continue };
         if !seen.insert(event.id) { continue; }
 
-        let (sender_pubkey, sender_hex, content) = match event.kind {
+        let (sender_pubkey, sender_hex, content, msg_ts) = match event.kind {
             Kind::EncryptedDirectMessage => {
                 let Ok(plain) = nip04::decrypt(keys.secret_key(), &event.pubkey, &event.content)
                 else { continue };
-                (event.pubkey, event.pubkey.to_hex(), plain)
+                (event.pubkey, event.pubkey.to_hex(), plain, event.created_at.as_u64())
             }
             Kind::GiftWrap => {
                 let Ok(unwrapped) = client.unwrap_gift_wrap(&event).await else { continue };
                 let inner = unwrapped.rumor;
-                (inner.pubkey, inner.pubkey.to_hex(), inner.content)
+                // Use inner rumor timestamp — outer gift-wrap timestamp is randomized (NIP-59)
+                let ts = inner.created_at.as_u64();
+                (inner.pubkey, inner.pubkey.to_hex(), inner.content, ts)
             }
             _ => continue,
         };
+
+        // Skip relay backlog from previous sessions; advance the high-water mark
+        if msg_ts <= last_seen_ts {
+            continue;
+        }
+        last_seen_ts = msg_ts;
+        save_last_seen(last_seen_ts);
 
         let proto = if event.kind == Kind::GiftWrap { "NIP-17" } else { "NIP-04" };
 
