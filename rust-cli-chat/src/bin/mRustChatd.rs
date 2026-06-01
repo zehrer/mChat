@@ -1,5 +1,5 @@
 use nostr_sdk::prelude::*;
-use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::Instant};
+use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::{Duration, Instant}};
 
 const VERSION: &str = "mRustChatd v0.0.2";
 const SPAM_THRESHOLD: u32 = 5;
@@ -18,6 +18,7 @@ fn key_path()       -> PathBuf { mclichat_dir().join("mchatd.key") }
 fn whitelist_path() -> PathBuf { mclichat_dir().join("whitelist.txt") }
 fn blocked_path()   -> PathBuf { mclichat_dir().join("blocked.txt") }
 fn pending_path()   -> PathBuf { mclichat_dir().join("pending.json") }
+fn users_path()     -> PathBuf { mclichat_dir().join("users.json") }
 
 // MARK: - Config
 
@@ -54,6 +55,58 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
     fs::write(&path, keys.secret_key().to_secret_hex())?;
     println!("Generated new identity → {}", path.display());
     Ok(keys)
+}
+
+// MARK: - User registry
+
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+struct UserInfo {
+    id: u32,
+    name: String,   // display name from kind:0, empty if not found
+}
+
+fn load_users() -> HashMap<String, UserInfo> {
+    serde_json::from_str(&fs::read_to_string(users_path()).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+fn save_users(users: &HashMap<String, UserInfo>) {
+    if let Ok(json) = serde_json::to_string_pretty(users) {
+        let _ = fs::write(users_path(), json);
+    }
+}
+
+async fn fetch_display_name(client: &Client, pubkey: PublicKey) -> String {
+    let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
+    match client.fetch_events(vec![filter], Some(Duration::from_secs(3))).await {
+        Ok(events) => events
+            .first()
+            .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.content).ok())
+            .and_then(|v| v["name"].as_str().map(String::from))
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
+async fn get_or_register(client: &Client, pubkey_hex: &str, pubkey: PublicKey) -> UserInfo {
+    let mut users = load_users();
+    if let Some(info) = users.get(pubkey_hex) {
+        return info.clone();
+    }
+    let id = users.values().map(|u| u.id).max().unwrap_or(0) + 1;
+    let name = fetch_display_name(client, pubkey).await;
+    let info = UserInfo { id, name };
+    users.insert(pubkey_hex.to_string(), info.clone());
+    save_users(&users);
+    info
+}
+
+fn display_name(info: &UserInfo, pubkey_hex: &str) -> String {
+    if info.name.is_empty() {
+        format!("#{} ({})", info.id, shorten(pubkey_hex))
+    } else {
+        format!("#{} {}", info.id, info.name)
+    }
 }
 
 // MARK: - Access control
@@ -109,7 +162,7 @@ fn ensure_whitelist() {
 
 // MARK: - Commands
 
-fn handle_command(text: &str, start_time: &Instant, msg_count: u64, known_senders: &HashSet<String>) -> String {
+fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
     let (cmd, args) = text.split_once(' ')
         .map(|(c, a)| (c, a.trim()))
         .unwrap_or((text, ""));
@@ -127,36 +180,54 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64, known_sender
             let blocked = load_pubkey_file(&blocked_path()).len();
             format!(
                 "{VERSION}\nUptime: {uptime}\nRelays ({n}): {relays}\n\
-                 Messages: {msg_count}\nKnown senders: {senders}\n\
-                 Authorized: {authorized} | Pending: {pending} | Blocked: {blocked}",
+                 Messages: {msg_count}\nAuthorized: {authorized} | Pending: {pending} | Blocked: {blocked}",
                 n = DEFAULT_RELAYS.len(),
-                senders = known_senders.len(),
             )
         }
 
         "/user" => {
-            let authorized = load_pubkey_file(&whitelist_path());
-            let pending = load_pending();
-            let blocked = load_pubkey_file(&blocked_path());
-            let mut lines = vec![];
-            for pk in &authorized { lines.push(format!("[auth]    {}", shorten(pk))); }
-            for (pk, n) in &pending { lines.push(format!("[pending] {} ({n}/{SPAM_THRESHOLD})", shorten(pk))); }
-            for pk in &blocked  { lines.push(format!("[blocked] {}", shorten(pk))); }
-            if lines.is_empty() { "No senders yet.".to_string() }
-            else { lines.join("\n") }
+            let users    = load_users();
+            let whitelist = load_pubkey_file(&whitelist_path());
+            let pending  = load_pending();
+            let blocked  = load_pubkey_file(&blocked_path());
+
+            let mut entries: Vec<(u32, String)> = vec![];
+
+            for pk in &whitelist {
+                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
+                            else { format!("({})", shorten(pk)) };
+                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
+                              format!("{label}  [auth]")));
+            }
+            for (pk, n) in &pending {
+                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
+                            else { format!("({})", shorten(pk)) };
+                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
+                              format!("{label}  [pending {n}/{SPAM_THRESHOLD}]")));
+            }
+            for pk in &blocked {
+                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
+                            else { format!("({})", shorten(pk)) };
+                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
+                              format!("{label}  [blocked]")));
+            }
+
+            if entries.is_empty() { return "No senders yet.".to_string(); }
+            entries.sort_by_key(|(id, _)| *id);
+            entries.into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
         }
 
         "/help" => "/ping — alive check\n\
                     /echo <text> — send text back\n\
                     /status — daemon info\n\
-                    /user — sender list with access state\n\
+                    /user — sender list with IDs and access state\n\
                     /help — this message".to_string(),
 
         _ => format!("Unknown command: {cmd}\nTry /help"),
     }
 }
 
-fn format_uptime(d: std::time::Duration) -> String {
+fn format_uptime(d: Duration) -> String {
     let s = d.as_secs();
     let (h, m, s) = (s / 3600, (s % 3600) / 60, s % 60);
     if h > 0 { format!("{h}h {m}m {s}s") }
@@ -164,8 +235,8 @@ fn format_uptime(d: std::time::Duration) -> String {
     else { format!("{s}s") }
 }
 
-fn dispatch(text: &str, start_time: &Instant, msg_count: u64, known_senders: &HashSet<String>) -> String {
-    if text.starts_with('/') { handle_command(text, start_time, msg_count, known_senders) }
+fn dispatch(text: &str, start_time: &Instant, msg_count: u64) -> String {
+    if text.starts_with('/') { handle_command(text, start_time, msg_count) }
     else { format!("echo: {text}") }
 }
 
@@ -208,7 +279,6 @@ async fn main() -> anyhow::Result<()> {
     let start_time = Instant::now();
     let mut msg_count: u64 = 0;
     let mut seen: HashSet<EventId> = HashSet::new();
-    let mut known_senders: HashSet<String> = HashSet::new();
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Event { event, .. } = notification else { continue };
@@ -228,25 +298,27 @@ async fn main() -> anyhow::Result<()> {
             _ => continue,
         };
 
-        let from = shorten(&sender_hex);
         let proto = if event.kind == Kind::GiftWrap { "NIP-17" } else { "NIP-04" };
+
+        // Register user on first contact (fetches display name)
+        let user = get_or_register(&client, &sender_hex, sender_pubkey).await;
+        let label = display_name(&user, &sender_hex);
 
         match check_access(&sender_hex) {
             Access::Authorized => {
-                known_senders.insert(sender_hex.clone());
                 msg_count += 1;
-                println!("[{proto}][auth] {from}: {content}");
-                let reply = dispatch(&content, &start_time, msg_count, &known_senders);
+                println!("[{proto}][auth] {label}: {content}");
+                let reply = dispatch(&content, &start_time, msg_count);
                 send_reply(&client, sender_pubkey, &reply).await;
             }
 
             Access::Blocked => {
-                println!("[{proto}][blocked] {from}: ignored");
+                println!("[{proto}][blocked] {label}: ignored");
             }
 
             Access::Pending(count) => {
                 let new_count = count + 1;
-                println!("[{proto}][pending {new_count}/{SPAM_THRESHOLD}] {from}: {content}");
+                println!("[{proto}][pending {new_count}/{SPAM_THRESHOLD}] {label}: {content}");
                 if new_count >= SPAM_THRESHOLD {
                     let mut p = load_pending();
                     p.remove(&sender_hex);
@@ -268,12 +340,11 @@ async fn main() -> anyhow::Result<()> {
                 let mut p = load_pending();
                 p.insert(sender_hex.clone(), 1);
                 save_pending(&p);
-                println!("[{proto}][new] {from}: added to pending list");
+                println!("[{proto}][new] {label}: added to pending list");
                 let welcome = format!(
                     "Hello! This is {VERSION}.\n\
                      Your contact request has been received and is pending admin authorization.\n\
-                     \n\
-                     https://github.com/zehrer/mChat"
+                     \nhttps://github.com/zehrer/mChat"
                 );
                 send_reply(&client, sender_pubkey, &welcome).await;
             }
@@ -294,8 +365,7 @@ async fn send_reply(client: &Client, pubkey: PublicKey, text: &str) {
 
 async fn publish_profile(client: &Client, name: &str, about: &str) {
     let content = serde_json::json!({ "name": name, "about": about }).to_string();
-    let builder = EventBuilder::new(Kind::Metadata, content, []);
-    match client.send_event_builder(builder).await {
+    match client.send_event_builder(EventBuilder::new(Kind::Metadata, content, [])).await {
         Ok(_) => println!("Profile published: {name}"),
         Err(e) => eprintln!("[warn] Profile publish failed: {e}"),
     }
