@@ -3,6 +3,9 @@ use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::{Duration, I
 
 const VERSION: &str = "mRustChatd v0.0.2";
 const SPAM_THRESHOLD: u32 = 5;
+// Relay backlog on startup can replay many messages at once; ignore pending/new
+// spam counting during this window to avoid false auto-blocks.
+const STARTUP_GRACE_SECS: u64 = 15;
 
 // MARK: - Paths
 
@@ -420,6 +423,12 @@ async fn main() -> anyhow::Result<()> {
             }
 
             Access::Pending(count) => {
+                // Skip spam counting during startup grace period to avoid
+                // false auto-blocks from relay backlog replays.
+                if start_time.elapsed().as_secs() < STARTUP_GRACE_SECS {
+                    println!("[{proto}][pending {count}/{SPAM_THRESHOLD}][grace] {label}: skipped");
+                    continue;
+                }
                 let new_count = count + 1;
                 println!("[{proto}][pending {new_count}/{SPAM_THRESHOLD}] {label}: {content}");
                 if new_count >= SPAM_THRESHOLD {
@@ -440,6 +449,12 @@ async fn main() -> anyhow::Result<()> {
             }
 
             Access::New => {
+                // Skip welcome during startup grace period; those messages were
+                // sent before the daemon started and likely already got a reply.
+                if start_time.elapsed().as_secs() < STARTUP_GRACE_SECS {
+                    println!("[{proto}][new][grace] {label}: skipped");
+                    continue;
+                }
                 let mut p = load_pending();
                 p.insert(sender_hex.clone(), 1);
                 save_pending(&p);
