@@ -145,9 +145,9 @@ fn save_roles(roles: &HashMap<String, Role>) {
     }
 }
 
-// No explicit entry in roles.json → admin (manually added to whitelist)
+// No explicit entry in roles.json → user (admin must be set locally in roles.json)
 fn get_role(pubkey: &str) -> Role {
-    load_roles().remove(pubkey).unwrap_or(Role::Admin)
+    load_roles().remove(pubkey).unwrap_or(Role::User)
 }
 
 // MARK: - Access control
@@ -314,31 +314,6 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
             }
         }
 
-        "/setrole" => {
-            if caller_role != &Role::Admin {
-                return "Permission denied: only admins can set roles.".to_string();
-            }
-            let parts: Vec<&str> = args.splitn(2, ' ').collect();
-            if parts.len() != 2 { return "Usage: /setrole <id> <admin|user>".to_string(); }
-            let Ok(id) = parts[0].parse::<u32>() else {
-                return "Usage: /setrole <id> <admin|user>".to_string();
-            };
-            let role = match parts[1] {
-                "admin" => Role::Admin,
-                "user"  => Role::User,
-                _       => return "Role must be 'admin' or 'user'.".to_string(),
-            };
-            match pubkey_for_id(id) {
-                None => format!("No user with id #{id}"),
-                Some((pubkey, info)) => {
-                    let mut roles = load_roles();
-                    roles.insert(pubkey.clone(), role.clone());
-                    save_roles(&roles);
-                    format!("{} role set to {role}.", display_name(&info, &pubkey))
-                }
-            }
-        }
-
         "/help" => format!(
             "/ping — alive check\n\
              /echo <text> — send text back\n\
@@ -346,7 +321,6 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
              /user — sender list with IDs, access state and role\n\
              /authorize <id> — grant full access\n\
              /block <id> — block a user (admin only)\n\
-             /setrole <id> <admin|user> — change role (admin only)\n\
              /help — this message\n\
              Your role: {caller_role}"
         ),
