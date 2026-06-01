@@ -59,10 +59,13 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
 
 // MARK: - User registry
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 struct UserInfo {
     id: u32,
-    name: String,   // display name from kind:0, empty if not found
+    #[serde(default)]
+    nip05: String,  // preferred: NIP-05 identifier (e.g. user@domain.com)
+    #[serde(default)]
+    name: String,   // fallback: name field from kind:0
 }
 
 fn load_users() -> HashMap<String, UserInfo> {
@@ -76,37 +79,46 @@ fn save_users(users: &HashMap<String, UserInfo>) {
     }
 }
 
-async fn fetch_display_name(client: &Client, pubkey: PublicKey) -> String {
+async fn fetch_metadata(client: &Client, pubkey: PublicKey) -> (String, String) {
     let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
     match client.fetch_events(vec![filter], Some(Duration::from_secs(3))).await {
         Ok(events) => events
             .first()
             .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.content).ok())
-            .and_then(|v| v["name"].as_str().map(String::from))
+            .map(|v| (
+                v["nip05"].as_str().unwrap_or("").to_string(),
+                v["name"].as_str().unwrap_or("").to_string(),
+            ))
             .unwrap_or_default(),
-        Err(_) => String::new(),
+        Err(_) => (String::new(), String::new()),
     }
 }
 
 async fn get_or_register(client: &Client, pubkey_hex: &str, pubkey: PublicKey) -> UserInfo {
     let mut users = load_users();
-    if let Some(info) = users.get(pubkey_hex) {
-        return info.clone();
+    // Re-fetch if entry exists but both name fields are empty (e.g. after a cache clear)
+    let needs_fetch = users.get(pubkey_hex)
+        .map(|u| u.nip05.is_empty() && u.name.is_empty())
+        .unwrap_or(true);
+
+    if needs_fetch {
+        let id = users.get(pubkey_hex).map(|u| u.id)
+            .unwrap_or_else(|| users.values().map(|u| u.id).max().unwrap_or(0) + 1);
+        let (nip05, name) = fetch_metadata(client, pubkey).await;
+        let info = UserInfo { id, nip05, name };
+        users.insert(pubkey_hex.to_string(), info.clone());
+        save_users(&users);
+        info
+    } else {
+        users[pubkey_hex].clone()
     }
-    let id = users.values().map(|u| u.id).max().unwrap_or(0) + 1;
-    let name = fetch_display_name(client, pubkey).await;
-    let info = UserInfo { id, name };
-    users.insert(pubkey_hex.to_string(), info.clone());
-    save_users(&users);
-    info
 }
 
 fn display_name(info: &UserInfo, pubkey_hex: &str) -> String {
-    if info.name.is_empty() {
-        format!("#{} ({})", info.id, shorten(pubkey_hex))
-    } else {
-        format!("#{} {}", info.id, info.name)
-    }
+    let label = if !info.nip05.is_empty() { &info.nip05 }
+                else if !info.name.is_empty() { &info.name }
+                else { return format!("#{} ({})", info.id, shorten(pubkey_hex)); };
+    format!("#{} {}", info.id, label)
 }
 
 // MARK: - Access control
