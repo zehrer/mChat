@@ -19,6 +19,7 @@ fn whitelist_path() -> PathBuf { mclichat_dir().join("whitelist.txt") }
 fn blocked_path()   -> PathBuf { mclichat_dir().join("blocked.txt") }
 fn pending_path()   -> PathBuf { mclichat_dir().join("pending.json") }
 fn users_path()     -> PathBuf { mclichat_dir().join("users.json") }
+fn roles_path()     -> PathBuf { mclichat_dir().join("roles.json") }
 
 // MARK: - Config
 
@@ -121,6 +122,34 @@ fn display_name(info: &UserInfo, pubkey_hex: &str) -> String {
     format!("#{} {}", info.id, label)
 }
 
+// MARK: - Roles
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+enum Role { Admin, User }
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self { Role::Admin => write!(f, "admin"), Role::User => write!(f, "user") }
+    }
+}
+
+fn load_roles() -> HashMap<String, Role> {
+    serde_json::from_str(&fs::read_to_string(roles_path()).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+fn save_roles(roles: &HashMap<String, Role>) {
+    if let Ok(json) = serde_json::to_string_pretty(roles) {
+        let _ = fs::write(roles_path(), json);
+    }
+}
+
+// No explicit entry in roles.json → admin (manually added to whitelist)
+fn get_role(pubkey: &str) -> Role {
+    load_roles().remove(pubkey).unwrap_or(Role::Admin)
+}
+
 // MARK: - Access control
 
 enum Access { Authorized, Pending(u32), Blocked, New }
@@ -187,7 +216,7 @@ fn ensure_whitelist() {
 
 // MARK: - Commands
 
-fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
+fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_count: u64) -> String {
     let (cmd, args) = text.split_once(' ')
         .map(|(c, a)| (c, a.trim()))
         .unwrap_or((text, ""));
@@ -212,6 +241,7 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
 
         "/user" => {
             let users    = load_users();
+            let roles    = load_roles();
             let whitelist = load_pubkey_file(&whitelist_path());
             let pending  = load_pending();
             let blocked  = load_pubkey_file(&blocked_path());
@@ -219,10 +249,11 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
             let mut entries: Vec<(u32, String)> = vec![];
 
             for pk in &whitelist {
+                let role = roles.get(pk).unwrap_or(&Role::Admin);
                 let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
                             else { format!("({})", shorten(pk)) };
                 entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
-                              format!("{label}  [auth]")));
+                              format!("{label}  [auth][{role}]")));
             }
             for (pk, n) in &pending {
                 let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
@@ -254,12 +285,19 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
                     if !load_pubkey_file(&whitelist_path()).contains(&pubkey) {
                         append_pubkey(&whitelist_path(), &pubkey);
                     }
+                    // Explicitly added via command → user role (unless already admin)
+                    let mut roles = load_roles();
+                    roles.entry(pubkey.clone()).or_insert(Role::User);
+                    save_roles(&roles);
                     format!("{} authorized.", display_name(&info, &pubkey))
                 }
             }
         }
 
         "/block" => {
+            if caller_role != &Role::Admin {
+                return "Permission denied: only admins can block users.".to_string();
+            }
             let Ok(id) = args.parse::<u32>() else {
                 return "Usage: /block <id>".to_string();
             };
@@ -276,13 +314,42 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
             }
         }
 
-        "/help" => "/ping — alive check\n\
-                    /echo <text> — send text back\n\
-                    /status — daemon info\n\
-                    /user — sender list with IDs and access state\n\
-                    /authorize <id> — grant full access\n\
-                    /block <id> — block a user\n\
-                    /help — this message".to_string(),
+        "/setrole" => {
+            if caller_role != &Role::Admin {
+                return "Permission denied: only admins can set roles.".to_string();
+            }
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            if parts.len() != 2 { return "Usage: /setrole <id> <admin|user>".to_string(); }
+            let Ok(id) = parts[0].parse::<u32>() else {
+                return "Usage: /setrole <id> <admin|user>".to_string();
+            };
+            let role = match parts[1] {
+                "admin" => Role::Admin,
+                "user"  => Role::User,
+                _       => return "Role must be 'admin' or 'user'.".to_string(),
+            };
+            match pubkey_for_id(id) {
+                None => format!("No user with id #{id}"),
+                Some((pubkey, info)) => {
+                    let mut roles = load_roles();
+                    roles.insert(pubkey.clone(), role.clone());
+                    save_roles(&roles);
+                    format!("{} role set to {role}.", display_name(&info, &pubkey))
+                }
+            }
+        }
+
+        "/help" => format!(
+            "/ping — alive check\n\
+             /echo <text> — send text back\n\
+             /status — daemon info\n\
+             /user — sender list with IDs, access state and role\n\
+             /authorize <id> — grant full access\n\
+             /block <id> — block a user (admin only)\n\
+             /setrole <id> <admin|user> — change role (admin only)\n\
+             /help — this message\n\
+             Your role: {caller_role}"
+        ),
 
         _ => format!("Unknown command: {cmd}\nTry /help"),
     }
@@ -296,8 +363,8 @@ fn format_uptime(d: Duration) -> String {
     else { format!("{s}s") }
 }
 
-fn dispatch(text: &str, start_time: &Instant, msg_count: u64) -> String {
-    if text.starts_with('/') { handle_command(text, start_time, msg_count) }
+fn dispatch(text: &str, role: &Role, start_time: &Instant, msg_count: u64) -> String {
+    if text.starts_with('/') { handle_command(text, role, start_time, msg_count) }
     else { format!("echo: {text}") }
 }
 
@@ -368,8 +435,9 @@ async fn main() -> anyhow::Result<()> {
         match check_access(&sender_hex) {
             Access::Authorized => {
                 msg_count += 1;
-                println!("[{proto}][auth] {label}: {content}");
-                let reply = dispatch(&content, &start_time, msg_count);
+                let role = get_role(&sender_hex);
+                println!("[{proto}][auth][{role}] {label}: {content}");
+                let reply = dispatch(&content, &role, &start_time, msg_count);
                 send_reply(&client, sender_pubkey, &reply).await;
             }
 
