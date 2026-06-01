@@ -46,8 +46,9 @@ struct EchoDaemon {
             switch AccessControl.check(msg.senderIdentifier) {
             case .authorized:
                 msgCount += 1
-                print("[auth] \(label): \(msg.content)")
-                let reply = dispatch(msg.content, startTime: startTime, msgCount: msgCount)
+                let role = RoleStore.getRole(msg.senderIdentifier)
+                print("[auth][\(role)] \(label): \(msg.content)")
+                let reply = dispatch(msg.content, callerRole: role, startTime: startTime, msgCount: msgCount)
                 await send(reply, to: msg.senderIdentifier, backend: backend)
 
             case .blocked:
@@ -88,7 +89,7 @@ struct EchoDaemon {
 
     // MARK: - Command dispatch
 
-    static func dispatch(_ text: String, startTime: Date, msgCount: Int) -> String {
+    static func dispatch(_ text: String, callerRole: RoleStore.Role, startTime: Date, msgCount: Int) -> String {
         guard text.hasPrefix("/") else { return "echo: \(text)" }
         let parts = text.split(separator: " ", maxSplits: 1)
         let cmd   = String(parts[0])
@@ -110,24 +111,26 @@ struct EchoDaemon {
             return "\(kVersion)\nUptime: \(uptime)\nRelays (\(NostrClient.defaultRelays.count)): \(relays)\nMessages: \(msgCount)\nAuthorized: \(authorized) | Pending: \(pending) | Blocked: \(blocked)"
 
         case "/user":
-            let users      = UserRegistry.loadUsers()
-            let whitelist  = AccessControl.loadLines(AccessControl.whitelistURL)
-            let pending    = AccessControl.loadPending()
-            let blocked    = AccessControl.loadLines(AccessControl.blockedURL)
+            let users     = UserRegistry.loadUsers()
+            let roles     = RoleStore.loadRoles()
+            let whitelist = AccessControl.loadLines(AccessControl.whitelistURL)
+            let pending   = AccessControl.loadPending()
+            let blocked   = AccessControl.loadLines(AccessControl.blockedURL)
 
             var entries: [(Int, String)] = []
             for pk in whitelist {
-                let u = users[pk]
+                let u     = users[pk]
+                let role  = roles[pk] ?? .admin
                 let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
-                entries.append((u?.id ?? 0, "\(label)  [auth]"))
+                entries.append((u?.id ?? 0, "\(label)  [auth][\(role)]"))
             }
             for (pk, n) in pending {
-                let u = users[pk]
+                let u     = users[pk]
                 let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
                 entries.append((u?.id ?? 0, "\(label)  [pending \(n)/\(kSpamThreshold)]"))
             }
             for pk in blocked {
-                let u = users[pk]
+                let u     = users[pk]
                 let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
                 entries.append((u?.id ?? 0, "\(label)  [blocked]"))
             }
@@ -139,15 +142,20 @@ struct EchoDaemon {
             guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
                 return "No user with id #\(id)"
             }
-            AccessControl.updatePending(pubkey, count: 0)  // effectively removes via savePending below
             var p = AccessControl.loadPending(); p.removeValue(forKey: pubkey); AccessControl.savePending(p)
             AccessControl.removePubkey(pubkey, from: AccessControl.blockedURL)
             if !AccessControl.loadLines(AccessControl.whitelistURL).contains(pubkey) {
                 AccessControl.appendLine(pubkey, to: AccessControl.whitelistURL)
             }
+            // Explicitly added via command → user role (unless already in roles.json)
+            var roles = RoleStore.loadRoles()
+            if roles[pubkey] == nil { roles[pubkey] = .user; RoleStore.saveRoles(roles) }
             return "\(UserRegistry.displayName(info, pubkey: pubkey)) authorized."
 
         case "/block":
+            guard callerRole == .admin else {
+                return "Permission denied: only admins can block users."
+            }
             guard let id = Int(args) else { return "Usage: /block <id>" }
             guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
                 return "No user with id #\(id)"
@@ -159,8 +167,25 @@ struct EchoDaemon {
             }
             return "\(UserRegistry.displayName(info, pubkey: pubkey)) blocked."
 
+        case "/setrole":
+            guard callerRole == .admin else {
+                return "Permission denied: only admins can set roles."
+            }
+            let roleParts = args.split(separator: " ", maxSplits: 1)
+            guard roleParts.count == 2,
+                  let id = Int(roleParts[0]) else { return "Usage: /setrole <id> <admin|user>" }
+            let roleStr = String(roleParts[1])
+            guard let newRole = RoleStore.Role(rawValue: roleStr) else {
+                return "Role must be 'admin' or 'user'."
+            }
+            guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
+                return "No user with id #\(id)"
+            }
+            var roles = RoleStore.loadRoles(); roles[pubkey] = newRole; RoleStore.saveRoles(roles)
+            return "\(UserRegistry.displayName(info, pubkey: pubkey)) role set to \(roleStr)."
+
         case "/help":
-            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs and access state\n/authorize <id> — grant full access\n/block <id> — block a user\n/help — this message"
+            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs, access state and role\n/authorize <id> — grant full access\n/block <id> — block a user (admin only)\n/setrole <id> <admin|user> — change role (admin only)\n/help — this message\nYour role: \(callerRole)"
 
         default:
             return "Unknown command: \(cmd)\nTry /help"
@@ -246,6 +271,33 @@ struct UserRegistry {
                   : nil
         if let label { return "#\(info.id) \(label)" }
         return "#\(info.id) (\(String(pubkey.prefix(16)))…)"
+    }
+}
+
+// MARK: - Roles
+
+struct RoleStore {
+    enum Role: String, Codable, CustomStringConvertible {
+        case admin, user
+        var description: String { rawValue }
+    }
+
+    static var rolesURL: URL { mCLIChatDir().appendingPathComponent("roles.json") }
+
+    static func loadRoles() -> [String: Role] {
+        guard let data = try? Data(contentsOf: rolesURL),
+              let dict = try? JSONDecoder().decode([String: Role].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    static func saveRoles(_ dict: [String: Role]) {
+        if let data = try? JSONEncoder().encode(dict) { try? data.write(to: rolesURL) }
+    }
+
+    // No explicit entry in roles.json → admin (manually added to whitelist)
+    static func getRole(_ pubkey: String) -> Role {
+        loadRoles()[pubkey] ?? .admin
     }
 }
 
