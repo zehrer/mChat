@@ -141,6 +141,19 @@ fn append_pubkey(path: &PathBuf, pubkey: &str) {
     let _ = fs::write(path, format!("{existing}{sep}{pubkey}\n"));
 }
 
+fn remove_pubkey(path: &PathBuf, pubkey: &str) {
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    let filtered: String = existing.lines()
+        .filter(|l| l.trim() != pubkey)
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let _ = fs::write(path, filtered);
+}
+
+fn pubkey_for_id(id: u32) -> Option<(String, UserInfo)> {
+    load_users().into_iter().find(|(_, u)| u.id == id)
+}
+
 fn load_pending() -> HashMap<String, u32> {
     serde_json::from_str(&fs::read_to_string(pending_path()).unwrap_or_default())
         .unwrap_or_default()
@@ -229,10 +242,46 @@ fn handle_command(text: &str, start_time: &Instant, msg_count: u64) -> String {
             entries.into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
         }
 
+        "/authorize" => {
+            let Ok(id) = args.parse::<u32>() else {
+                return "Usage: /authorize <id>".to_string();
+            };
+            match pubkey_for_id(id) {
+                None => format!("No user with id #{id}"),
+                Some((pubkey, info)) => {
+                    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
+                    remove_pubkey(&blocked_path(), &pubkey);
+                    if !load_pubkey_file(&whitelist_path()).contains(&pubkey) {
+                        append_pubkey(&whitelist_path(), &pubkey);
+                    }
+                    format!("{} authorized.", display_name(&info, &pubkey))
+                }
+            }
+        }
+
+        "/block" => {
+            let Ok(id) = args.parse::<u32>() else {
+                return "Usage: /block <id>".to_string();
+            };
+            match pubkey_for_id(id) {
+                None => format!("No user with id #{id}"),
+                Some((pubkey, info)) => {
+                    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
+                    remove_pubkey(&whitelist_path(), &pubkey);
+                    if !load_pubkey_file(&blocked_path()).contains(&pubkey) {
+                        append_pubkey(&blocked_path(), &pubkey);
+                    }
+                    format!("{} blocked.", display_name(&info, &pubkey))
+                }
+            }
+        }
+
         "/help" => "/ping — alive check\n\
                     /echo <text> — send text back\n\
                     /status — daemon info\n\
                     /user — sender list with IDs and access state\n\
+                    /authorize <id> — grant full access\n\
+                    /block <id> — block a user\n\
                     /help — this message".to_string(),
 
         _ => format!("Unknown command: {cmd}\nTry /help"),
