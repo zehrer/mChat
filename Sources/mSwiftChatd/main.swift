@@ -171,7 +171,8 @@ struct EchoDaemon {
 
 struct UserInfo: Codable {
     let id: Int
-    var name: String    // display name from kind:0, empty if not found
+    var nip05: String   // preferred: NIP-05 identifier
+    var name: String    // fallback: name field from kind:0
 }
 
 struct UserRegistry {
@@ -192,24 +193,30 @@ struct UserRegistry {
 
     static func getOrRegister(_ pubkey: String, backend: NostrBackend) async -> UserInfo {
         var users = loadUsers()
-        if let existing = users[pubkey] { return existing }
-        let nextId = (users.values.map { $0.id }.max() ?? 0) + 1
-        let name = await fetchDisplayName(pubkey, backend: backend)
-        let info = UserInfo(id: nextId, name: name)
+        // Re-fetch if entry exists but both name fields are empty (e.g. after a cache clear)
+        let needsFetch = users[pubkey].map { $0.nip05.isEmpty && $0.name.isEmpty } ?? true
+        guard needsFetch else { return users[pubkey]! }
+
+        let existingId = users[pubkey]?.id
+        let nextId = existingId ?? ((users.values.map { $0.id }.max() ?? 0) + 1)
+        let (nip05, name) = await fetchMetadata(pubkey, backend: backend)
+        let info = UserInfo(id: nextId, nip05: nip05, name: name)
         users[pubkey] = info
         saveUsers(users)
         return info
     }
 
-    static func fetchDisplayName(_ pubkey: String, backend: NostrBackend) async -> String {
-        guard let contact = try? await backend.resolveContact(identifier: pubkey) else { return "" }
-        return contact.name ?? ""
+    static func fetchMetadata(_ pubkey: String, backend: NostrBackend) async -> (String, String) {
+        guard let contact = try? await backend.resolveContact(identifier: pubkey) else { return ("", "") }
+        return (contact.nip05 ?? "", contact.name ?? "")
     }
 
     static func displayName(_ info: UserInfo, pubkey: String) -> String {
-        info.name.isEmpty
-            ? "#\(info.id) (\(String(pubkey.prefix(16)))…)"
-            : "#\(info.id) \(info.name)"
+        let label = !info.nip05.isEmpty ? info.nip05
+                  : !info.name.isEmpty  ? info.name
+                  : nil
+        if let label { return "#\(info.id) \(label)" }
+        return "#\(info.id) (\(String(pubkey.prefix(16)))…)"
     }
 }
 
