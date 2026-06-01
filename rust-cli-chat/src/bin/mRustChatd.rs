@@ -247,32 +247,38 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
         }
 
         "/user" => {
-            let users    = load_users();
+            let mut users = load_users();
             let roles    = load_roles();
             let whitelist = load_pubkey_file(&whitelist_path());
             let pending  = load_pending();
             let blocked  = load_pubkey_file(&blocked_path());
 
+            // Lazily assign IDs to any listed pubkey not yet in users.json so
+            // every user shown here has an #ID that /authorize and /block can target.
+            let mut dirty = false;
+            for pk in whitelist.iter().chain(pending.keys()).chain(blocked.iter()) {
+                if !users.contains_key(pk) {
+                    let next_id = users.values().map(|u| u.id).max().unwrap_or(0) + 1;
+                    users.insert(pk.clone(), UserInfo { id: next_id, nip05: String::new(), name: String::new() });
+                    dirty = true;
+                }
+            }
+            if dirty { save_users(&users); }
+
             let mut entries: Vec<(u32, String)> = vec![];
 
             for pk in &whitelist {
                 let role = roles.get(pk).unwrap_or(&Role::Admin);
-                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
-                            else { format!("({})", shorten(pk)) };
-                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
-                              format!("{label}  [auth][{role}]")));
+                let u = &users[pk];
+                entries.push((u.id, format!("{}  [auth][{role}]", display_name(u, pk))));
             }
             for (pk, n) in &pending {
-                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
-                            else { format!("({})", shorten(pk)) };
-                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
-                              format!("{label}  [pending {n}/{SPAM_THRESHOLD}]")));
+                let u = &users[pk];
+                entries.push((u.id, format!("{}  [pending {n}/{SPAM_THRESHOLD}]", display_name(u, pk))));
             }
             for pk in &blocked {
-                let label = if let Some(u) = users.get(pk) { display_name(u, pk) }
-                            else { format!("({})", shorten(pk)) };
-                entries.push((users.get(pk).map(|u| u.id).unwrap_or(0),
-                              format!("{label}  [blocked]")));
+                let u = &users[pk];
+                entries.push((u.id, format!("{}  [blocked]", display_name(u, pk))));
             }
 
             if entries.is_empty() { return "No senders yet.".to_string(); }

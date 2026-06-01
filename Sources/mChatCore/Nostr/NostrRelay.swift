@@ -93,6 +93,9 @@ public actor NostrRelay {
     private func sendSubscribe(id: String, filter: NostrFilter) async throws {
         let filterJSON = try JSONEncoder().encode(filter)
         guard let filterStr = String(data: filterJSON, encoding: .utf8) else { return }
+        #if DEBUG
+        print("[relay REQ] \(url.host ?? "") sub:\(id.prefix(8)) filter:\(filterStr)")
+        #endif
         try await sendRaw("[\"REQ\",\"\(id)\",\(filterStr)]")
     }
 
