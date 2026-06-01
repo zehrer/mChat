@@ -35,26 +35,27 @@ struct EchoDaemon {
 
         let startTime = Date()
         var msgCount = 0
-        var knownSenders: Set<String> = []
 
         for await msg in await backend.incomingMessages() {
             guard !msg.fromMe else { continue }
-            let from = String(msg.senderIdentifier.prefix(16))
+
+            // Register / look up user on first contact
+            let user = await UserRegistry.getOrRegister(msg.senderIdentifier, backend: backend)
+            let label = UserRegistry.displayName(user, pubkey: msg.senderIdentifier)
 
             switch AccessControl.check(msg.senderIdentifier) {
             case .authorized:
-                knownSenders.insert(msg.senderIdentifier)
                 msgCount += 1
-                print("[auth] \(from)…: \(msg.content)")
-                let reply = dispatch(msg.content, startTime: startTime, msgCount: msgCount, knownSenders: knownSenders)
+                print("[auth] \(label): \(msg.content)")
+                let reply = dispatch(msg.content, startTime: startTime, msgCount: msgCount)
                 await send(reply, to: msg.senderIdentifier, backend: backend)
 
             case .blocked:
-                print("[blocked] \(from)…: ignored")
+                print("[blocked] \(label): ignored")
 
             case .pending(let count):
                 let newCount = count + 1
-                print("[pending \(newCount)/\(kSpamThreshold)] \(from)…: \(msg.content)")
+                print("[pending \(newCount)/\(kSpamThreshold)] \(label): \(msg.content)")
                 if newCount >= kSpamThreshold {
                     AccessControl.promoteToBlocked(msg.senderIdentifier)
                     print("  → blocked (spam threshold reached)")
@@ -68,13 +69,8 @@ struct EchoDaemon {
 
             case .new:
                 AccessControl.addPending(msg.senderIdentifier)
-                print("[new] \(from)…: added to pending list")
-                let welcome = """
-                    Hello! This is \(kVersion).
-                    Your contact request has been received and is pending admin authorization.
-
-                    https://github.com/zehrer/mChat
-                    """
+                print("[new] \(label): added to pending list")
+                let welcome = "Hello! This is \(kVersion).\nYour contact request has been received and is pending admin authorization.\n\nhttps://github.com/zehrer/mChat"
                 await send(welcome, to: msg.senderIdentifier, backend: backend)
             }
         }
@@ -92,7 +88,7 @@ struct EchoDaemon {
 
     // MARK: - Command dispatch
 
-    static func dispatch(_ text: String, startTime: Date, msgCount: Int, knownSenders: Set<String>) -> String {
+    static func dispatch(_ text: String, startTime: Date, msgCount: Int) -> String {
         guard text.hasPrefix("/") else { return "echo: \(text)" }
         let parts = text.split(separator: " ", maxSplits: 1)
         let cmd   = String(parts[0])
@@ -111,33 +107,35 @@ struct EchoDaemon {
             let authorized = AccessControl.loadLines(AccessControl.whitelistURL).count
             let pending    = AccessControl.loadPending().count
             let blocked    = AccessControl.loadLines(AccessControl.blockedURL).count
-            return """
-                \(kVersion)
-                Uptime: \(uptime)
-                Relays (\(NostrClient.defaultRelays.count)): \(relays)
-                Messages: \(msgCount)
-                Known senders: \(knownSenders.count)
-                Authorized: \(authorized) | Pending: \(pending) | Blocked: \(blocked)
-                """
+            return "\(kVersion)\nUptime: \(uptime)\nRelays (\(NostrClient.defaultRelays.count)): \(relays)\nMessages: \(msgCount)\nAuthorized: \(authorized) | Pending: \(pending) | Blocked: \(blocked)"
 
         case "/user":
-            let authorized = AccessControl.loadLines(AccessControl.whitelistURL)
+            let users      = UserRegistry.loadUsers()
+            let whitelist  = AccessControl.loadLines(AccessControl.whitelistURL)
             let pending    = AccessControl.loadPending()
             let blocked    = AccessControl.loadLines(AccessControl.blockedURL)
-            var lines: [String] = []
-            authorized.forEach { lines.append("[auth]    \(String($0.prefix(16)))…") }
-            pending.forEach    { lines.append("[pending] \(String($0.key.prefix(16)))… (\($0.value)/\(kSpamThreshold))") }
-            blocked.forEach    { lines.append("[blocked] \(String($0.prefix(16)))…") }
-            return lines.isEmpty ? "No senders yet." : lines.sorted().joined(separator: "\n")
+
+            var entries: [(Int, String)] = []
+            for pk in whitelist {
+                let u = users[pk]
+                let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
+                entries.append((u?.id ?? 0, "\(label)  [auth]"))
+            }
+            for (pk, n) in pending {
+                let u = users[pk]
+                let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
+                entries.append((u?.id ?? 0, "\(label)  [pending \(n)/\(kSpamThreshold)]"))
+            }
+            for pk in blocked {
+                let u = users[pk]
+                let label = u.map { UserRegistry.displayName($0, pubkey: pk) } ?? "(\(String(pk.prefix(16)))…)"
+                entries.append((u?.id ?? 0, "\(label)  [blocked]"))
+            }
+            if entries.isEmpty { return "No senders yet." }
+            return entries.sorted { $0.0 < $1.0 }.map { $0.1 }.joined(separator: "\n")
 
         case "/help":
-            return """
-                /ping — alive check
-                /echo <text> — send text back
-                /status — daemon info
-                /user — sender list with access state
-                /help — this message
-                """
+            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs and access state\n/help — this message"
 
         default:
             return "Unknown command: \(cmd)\nTry /help"
@@ -166,6 +164,52 @@ struct EchoDaemon {
         if h > 0 { return "\(h)h \(m)m \(s)s" }
         if m > 0 { return "\(m)m \(s)s" }
         return "\(s)s"
+    }
+}
+
+// MARK: - User Registry
+
+struct UserInfo: Codable {
+    let id: Int
+    var name: String    // display name from kind:0, empty if not found
+}
+
+struct UserRegistry {
+    static var usersURL: URL { mCLIChatDir().appendingPathComponent("users.json") }
+
+    static func loadUsers() -> [String: UserInfo] {
+        guard let data = try? Data(contentsOf: usersURL),
+              let dict = try? JSONDecoder().decode([String: UserInfo].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    static func saveUsers(_ dict: [String: UserInfo]) {
+        if let data = try? JSONEncoder().encode(dict) {
+            try? data.write(to: usersURL)
+        }
+    }
+
+    static func getOrRegister(_ pubkey: String, backend: NostrBackend) async -> UserInfo {
+        var users = loadUsers()
+        if let existing = users[pubkey] { return existing }
+        let nextId = (users.values.map { $0.id }.max() ?? 0) + 1
+        let name = await fetchDisplayName(pubkey, backend: backend)
+        let info = UserInfo(id: nextId, name: name)
+        users[pubkey] = info
+        saveUsers(users)
+        return info
+    }
+
+    static func fetchDisplayName(_ pubkey: String, backend: NostrBackend) async -> String {
+        guard let contact = try? await backend.resolveContact(identifier: pubkey) else { return "" }
+        return contact.name ?? ""
+    }
+
+    static func displayName(_ info: UserInfo, pubkey: String) -> String {
+        info.name.isEmpty
+            ? "#\(info.id) (\(String(pubkey.prefix(16)))…)"
+            : "#\(info.id) \(info.name)"
     }
 }
 
@@ -213,9 +257,7 @@ struct AccessControl {
     }
 
     static func savePending(_ dict: [String: Int]) {
-        if let data = try? JSONEncoder().encode(dict) {
-            try? data.write(to: pendingURL)
-        }
+        if let data = try? JSONEncoder().encode(dict) { try? data.write(to: pendingURL) }
     }
 
     static func appendLine(_ line: String, to url: URL) {
@@ -226,13 +268,8 @@ struct AccessControl {
 
     static func ensureWhitelist() {
         guard !FileManager.default.fileExists(atPath: whitelistURL.path) else { return }
-        let header = """
-            # mSwiftChatd authorized pubkeys
-            # Add one hex pubkey per line to grant full access.
-            # Lines starting with # are ignored.
-
-            """
-        try? header.write(to: whitelistURL, atomically: true, encoding: .utf8)
+        try? "# mSwiftChatd authorized pubkeys\n# Add one hex pubkey per line.\n"
+            .write(to: whitelistURL, atomically: true, encoding: .utf8)
     }
 }
 
@@ -276,17 +313,7 @@ struct DaemonConfig {
     }
 
     private static func writeDefaultConfig(to url: URL) {
-        let content = """
-            # mChat daemon configuration
-
-            [swift]
-            name  = "\(kVersion)"
-            about = "Swift Agent Daemon https://github.com/zehrer/mChat"
-
-            [rust]
-            name  = "mRustChatd v0.0.2"
-            about = "Rust Agent Daemon https://github.com/zehrer/mChat"
-            """
+        let content = "# mChat daemon configuration\n\n[swift]\nname  = \"\(kVersion)\"\nabout = \"Swift Agent Daemon https://github.com/zehrer/mChat\"\n\n[rust]\nname  = \"mRustChatd v0.0.2\"\nabout = \"Rust Agent Daemon https://github.com/zehrer/mChat\"\n"
         try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 }
