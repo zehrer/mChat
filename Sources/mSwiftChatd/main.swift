@@ -134,8 +134,33 @@ struct EchoDaemon {
             if entries.isEmpty { return "No senders yet." }
             return entries.sorted { $0.0 < $1.0 }.map { $0.1 }.joined(separator: "\n")
 
+        case "/authorize":
+            guard let id = Int(args) else { return "Usage: /authorize <id>" }
+            guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
+                return "No user with id #\(id)"
+            }
+            AccessControl.updatePending(pubkey, count: 0)  // effectively removes via savePending below
+            var p = AccessControl.loadPending(); p.removeValue(forKey: pubkey); AccessControl.savePending(p)
+            AccessControl.removePubkey(pubkey, from: AccessControl.blockedURL)
+            if !AccessControl.loadLines(AccessControl.whitelistURL).contains(pubkey) {
+                AccessControl.appendLine(pubkey, to: AccessControl.whitelistURL)
+            }
+            return "\(UserRegistry.displayName(info, pubkey: pubkey)) authorized."
+
+        case "/block":
+            guard let id = Int(args) else { return "Usage: /block <id>" }
+            guard let (pubkey, info) = UserRegistry.pubkeyForId(id) else {
+                return "No user with id #\(id)"
+            }
+            var p = AccessControl.loadPending(); p.removeValue(forKey: pubkey); AccessControl.savePending(p)
+            AccessControl.removePubkey(pubkey, from: AccessControl.whitelistURL)
+            if !AccessControl.loadLines(AccessControl.blockedURL).contains(pubkey) {
+                AccessControl.appendLine(pubkey, to: AccessControl.blockedURL)
+            }
+            return "\(UserRegistry.displayName(info, pubkey: pubkey)) blocked."
+
         case "/help":
-            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs and access state\n/help — this message"
+            return "/ping — alive check\n/echo <text> — send text back\n/status — daemon info\n/user — sender list with IDs and access state\n/authorize <id> — grant full access\n/block <id> — block a user\n/help — this message"
 
         default:
             return "Unknown command: \(cmd)\nTry /help"
@@ -211,6 +236,10 @@ struct UserRegistry {
         return (contact.nip05 ?? "", contact.name ?? "")
     }
 
+    static func pubkeyForId(_ id: Int) -> (String, UserInfo)? {
+        loadUsers().first { $0.value.id == id }.map { ($0.key, $0.value) }
+    }
+
     static func displayName(_ info: UserInfo, pubkey: String) -> String {
         let label = !info.nip05.isEmpty ? info.nip05
                   : !info.name.isEmpty  ? info.name
@@ -271,6 +300,14 @@ struct AccessControl {
         let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let sep = (existing.isEmpty || existing.hasSuffix("\n")) ? "" : "\n"
         try? (existing + sep + line + "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    static func removePubkey(_ pubkey: String, from url: URL) {
+        guard let existing = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let filtered = existing.components(separatedBy: "\n")
+            .filter { $0.trimmingCharacters(in: .whitespaces) != pubkey }
+            .joined(separator: "\n")
+        try? filtered.write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func ensureWhitelist() {
