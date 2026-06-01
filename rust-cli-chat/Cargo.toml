@@ -1,0 +1,26 @@
+[package]
+name = "mclichat"
+version = "0.1.0"
+edition = "2021"
+description = "Nostr CLI chat client — Rust port of mCLIChat"
+
+[[bin]]
+name = "mclichat"
+path = "src/main.rs"
+
+[[bin]]
+name = "mchatd"
+path = "src/bin/mchatd.rs"
+
+[dependencies]
+# Nostr protocol: keypairs, relay connections, NIP-04 encrypted DMs
+nostr-sdk = { version = "0.36", features = ["nip04"] }
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# Ergonomic error handling for CLI apps
+anyhow = "1"
+# Contacts persistence
+serde_json = "1"
+# Configuration file parsing
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
