@@ -88,18 +88,16 @@ fn save_users(users: &HashMap<String, UserInfo>) {
 }
 
 async fn fetch_metadata(client: &Client, pubkey: PublicKey) -> (String, String) {
+    let meta = fetch_profile(client, pubkey).await;
+    let get = |k: &str| meta.as_ref().and_then(|m| m[k].as_str()).unwrap_or("").to_string();
+    (get("nip05"), get("name"))
+}
+
+async fn fetch_profile(client: &Client, pubkey: PublicKey) -> Option<serde_json::Value> {
     let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
-    match client.fetch_events(vec![filter], Some(Duration::from_secs(3))).await {
-        Ok(events) => events
-            .first()
-            .and_then(|e| serde_json::from_str::<serde_json::Value>(&e.content).ok())
-            .map(|v| (
-                v["nip05"].as_str().unwrap_or("").to_string(),
-                v["name"].as_str().unwrap_or("").to_string(),
-            ))
-            .unwrap_or_default(),
-        Err(_) => (String::new(), String::new()),
-    }
+    client.fetch_events(vec![filter], Some(Duration::from_secs(5))).await.ok()?
+        .into_iter().next()
+        .and_then(|e| serde_json::from_str(&e.content).ok())
 }
 
 async fn get_or_register(client: &Client, pubkey_hex: &str, pubkey: PublicKey) -> UserInfo {
@@ -332,6 +330,7 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
              /echo <text> — send text back\n\
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
+             /user details <id> — full profile (re-fetches from relays)\n\
              /authorize <id> — grant full access\n\
              /block <id> — block a user (admin only)\n\
              /help — this message\n\
@@ -353,6 +352,83 @@ fn format_uptime(d: Duration) -> String {
 fn dispatch(text: &str, role: &Role, start_time: &Instant, msg_count: u64) -> String {
     if text.starts_with('/') { handle_command(text, role, start_time, msg_count) }
     else { format!("echo: {text}") }
+}
+
+async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg_count: u64, client: &Client) -> String {
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix("/user details") {
+        return cmd_user_details(rest.trim(), client).await;
+    }
+    dispatch(text, role, start_time, msg_count)
+}
+
+async fn cmd_user_details(args: &str, client: &Client) -> String {
+    let id_str = args.trim_start_matches('#');
+    let Ok(id) = id_str.parse::<u32>() else {
+        return "Usage: /user details <id>".to_string();
+    };
+    let Some((pubkey_hex, _)) = pubkey_for_id(id) else {
+        return format!("No user with id #{id}");
+    };
+    let Ok(pubkey) = PublicKey::from_hex(&pubkey_hex) else {
+        return "Invalid pubkey stored for that user.".to_string();
+    };
+
+    let meta = fetch_profile(client, pubkey).await;
+    let get = |key: &str| -> String {
+        meta.as_ref()
+            .and_then(|m| m[key].as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("-")
+            .to_string()
+    };
+
+    let nip05        = get("nip05");
+    let name         = get("name");
+    let display_name = get("display_name");
+    let about        = get("about");
+    let website      = get("website");
+    let lud16        = get("lud16");
+    let picture      = get("picture");
+
+    // Persist fresh name data so /user benefits next time
+    let mut users = load_users();
+    if let Some(u) = users.get_mut(&pubkey_hex) {
+        if nip05 != "-" { u.nip05 = nip05.clone(); }
+        if name != "-"  { u.name  = name.clone(); }
+        save_users(&users);
+    }
+
+    let whitelist = load_pubkey_file(&whitelist_path());
+    let blocked   = load_pubkey_file(&blocked_path());
+    let pending   = load_pending();
+    let status = if whitelist.contains(&pubkey_hex)     { "authorized".to_string() }
+                 else if blocked.contains(&pubkey_hex)  { "blocked".to_string() }
+                 else if let Some(n) = pending.get(&pubkey_hex) {
+                     format!("pending ({n}/{SPAM_THRESHOLD})")
+                 } else { "unknown".to_string() };
+
+    let role = load_roles().get(&pubkey_hex).cloned().unwrap_or(Role::User);
+    let npub = pubkey.to_bech32().unwrap_or_else(|_| "-".to_string());
+
+    let label = if nip05 != "-" { nip05.clone() }
+                else if name != "-" { name.clone() }
+                else { shorten(&pubkey_hex) };
+
+    format!(
+        "#{id} {label}\n\
+         Status:   {status}\n\
+         Role:     {role}\n\
+         NIP-05:   {nip05}\n\
+         Name:     {name}\n\
+         Display:  {display_name}\n\
+         About:    {about}\n\
+         Website:  {website}\n\
+         LN addr:  {lud16}\n\
+         Picture:  {picture}\n\
+         npub:     {npub}\n\
+         pubkey:   {pubkey_hex}"
+    )
 }
 
 // MARK: - Relays
@@ -424,7 +500,7 @@ async fn main() -> anyhow::Result<()> {
                 msg_count += 1;
                 let role = get_role(&sender_hex);
                 println!("[{proto}][auth][{role}] {label}: {content}");
-                let reply = dispatch(&content, &role, &start_time, msg_count);
+                let reply = dispatch_with_client(&content, &role, &start_time, msg_count, &client).await;
                 send_reply(&client, sender_pubkey, &reply).await;
             }
 
