@@ -329,35 +329,15 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
             }
         }
 
-        "/block" => {
-            if caller_role != &Role::Admin {
-                return "Permission denied: only admins can block users.".to_string();
-            }
-            let Ok(id) = args.parse::<u32>() else {
-                return "Usage: /block <id>".to_string();
-            };
-            match pubkey_for_id(id) {
-                None => format!("No user with id #{id}"),
-                Some((pubkey, info)) => {
-                    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
-                    remove_pubkey(&whitelist_path(), &pubkey);
-                    if !load_pubkey_file(&blocked_path()).contains(&pubkey) {
-                        append_pubkey(&blocked_path(), &pubkey);
-                    }
-                    format!("{} blocked.", display_name(&info, &pubkey))
-                }
-            }
-        }
-
         "/help" => format!(
             "/ping — alive check\n\
              /echo <text> — send text back\n\
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
              /user details <id> — full profile (re-fetches from relays)\n\
+             /user block <id> — block a user and notify them (admin only)\n\
              /user delete <id> — remove user from all lists (admin only)\n\
              /authorize <id> — grant full access\n\
-             /block <id> — block a user (admin only)\n\
              /help — this message\n\
              Your role: {caller_role}"
         ),
@@ -384,6 +364,12 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
     if let Some(rest) = trimmed.strip_prefix("/user details") {
         return cmd_user_details(rest.trim(), client).await;
     }
+    if let Some(rest) = trimmed.strip_prefix("/user block") {
+        if role != &Role::Admin {
+            return "Permission denied: only admins can block users.".to_string();
+        }
+        return cmd_user_block(rest.trim(), client).await;
+    }
     if let Some(rest) = trimmed.strip_prefix("/user delete") {
         if role != &Role::Admin {
             return "Permission denied: only admins can delete users.".to_string();
@@ -391,6 +377,26 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
         return cmd_user_delete(rest.trim());
     }
     dispatch(text, role, start_time, msg_count)
+}
+
+async fn cmd_user_block(args: &str, client: &Client) -> String {
+    let id_str = args.trim_start_matches('#');
+    let Ok(id) = id_str.parse::<u32>() else {
+        return "Usage: /user block <id>".to_string();
+    };
+    let Some((pubkey, info)) = pubkey_for_id(id) else {
+        return format!("No user with id #{id}");
+    };
+    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
+    remove_pubkey(&whitelist_path(), &pubkey);
+    if !load_pubkey_file(&blocked_path()).contains(&pubkey) {
+        append_pubkey(&blocked_path(), &pubkey);
+    }
+    if let Ok(target) = PublicKey::from_hex(&pubkey) {
+        send_reply(client, target,
+            "You have been blocked. You will no longer receive responses from this service.").await;
+    }
+    format!("{} blocked.", display_name(&info, &pubkey))
 }
 
 fn cmd_user_delete(args: &str) -> String {
@@ -784,7 +790,7 @@ mod tests {
     fn cmd_help_contains_all_commands() {
         let t = Instant::now();
         let r = handle_command("/help", &Role::Admin, &t, 0);
-        for cmd in &["/ping", "/echo", "/status", "/user", "/authorize", "/block", "/help"] {
+        for cmd in &["/ping", "/echo", "/status", "/user", "/authorize", "/user block", "/user delete", "/user details", "/help"] {
             assert!(r.contains(cmd), "help missing {cmd}");
         }
     }
@@ -796,18 +802,20 @@ mod tests {
         assert!(handle_command("/help", &Role::User,  &t, 0).contains("user"));
     }
 
-    #[test]
-    fn cmd_block_requires_admin() {
+    #[tokio::test]
+    async fn cmd_user_block_requires_admin() {
         let t = Instant::now();
-        let r = handle_command("/block 1", &Role::User, &t, 0);
+        let client = Client::new(Keys::generate());
+        let r = dispatch_with_client("/user block 1", &Role::User, &t, 0, &client).await;
         assert!(r.contains("Permission denied"));
     }
 
-    #[test]
-    fn cmd_block_bad_arg() {
+    #[tokio::test]
+    async fn cmd_user_block_bad_arg() {
         let t = Instant::now();
-        let r = handle_command("/block abc", &Role::Admin, &t, 0);
-        assert!(r.contains("Usage: /block"));
+        let client = Client::new(Keys::generate());
+        let r = dispatch_with_client("/user block abc", &Role::Admin, &t, 0, &client).await;
+        assert!(r.contains("Usage: /user block"));
     }
 
     #[test]
