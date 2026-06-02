@@ -355,6 +355,7 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
              /user details <id> — full profile (re-fetches from relays)\n\
+             /user delete <id> — remove user from all lists (admin only)\n\
              /authorize <id> — grant full access\n\
              /block <id> — block a user (admin only)\n\
              /help — this message\n\
@@ -383,7 +384,29 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
     if let Some(rest) = trimmed.strip_prefix("/user details") {
         return cmd_user_details(rest.trim(), client).await;
     }
+    if let Some(rest) = trimmed.strip_prefix("/user delete") {
+        if role != &Role::Admin {
+            return "Permission denied: only admins can delete users.".to_string();
+        }
+        return cmd_user_delete(rest.trim());
+    }
     dispatch(text, role, start_time, msg_count)
+}
+
+fn cmd_user_delete(args: &str) -> String {
+    let id_str = args.trim_start_matches('#');
+    let Ok(id) = id_str.parse::<u32>() else {
+        return "Usage: /user delete <id>".to_string();
+    };
+    let Some((pubkey, info)) = pubkey_for_id(id) else {
+        return format!("No user with id #{id}");
+    };
+    remove_pubkey(&whitelist_path(), &pubkey);
+    remove_pubkey(&blocked_path(), &pubkey);
+    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
+    let mut users = load_users(); users.remove(&pubkey); save_users(&users);
+    let mut roles = load_roles(); roles.remove(&pubkey); save_roles(&roles);
+    format!("{} deleted from all lists.", display_name(&info, &pubkey))
 }
 
 async fn cmd_user_details(args: &str, client: &Client) -> String {
