@@ -1,4 +1,12 @@
+# Rust build artifacts
+target/
+
+# Swift Package Manager build artifacts
 .build/
+
+# Object/dependency files
 *.o
 *.d
+
+# Xcode derived data
 DerivedData/

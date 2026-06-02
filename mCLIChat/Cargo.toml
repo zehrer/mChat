@@ -1,0 +1,17 @@
+[package]
+name = "mCLIChat"
+version = "0.1.0"
+edition = "2021"
+description = "mChat Nostr CLI client — interactive chat and mChatd integration test tool"
+
+[[bin]]
+name = "mCLIChat"
+path = "src/main.rs"
+
+[dependencies]
+nostr-sdk = { version = "0.36", features = ["nip04"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
