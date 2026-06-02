@@ -3,6 +3,8 @@ use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::{Duration, I
 
 const VERSION: &str = "mRustChatd v0.0.2";
 const SPAM_THRESHOLD: u32 = 5;
+// Placeholder until LLM integration; replace this constant to swap the response.
+const FREE_TEXT_REPLY: &str = "I can only respond to commands for now. Send /help for the list.";
 // Relay backlog on startup can replay many messages at once; ignore pending/new
 // spam counting during this window to avoid false auto-blocks.
 const STARTUP_GRACE_SECS: u64 = 15;
@@ -356,7 +358,7 @@ fn format_uptime(d: Duration) -> String {
 
 fn dispatch(text: &str, role: &Role, start_time: &Instant, msg_count: u64) -> String {
     if text.starts_with('/') { handle_command(text, role, start_time, msg_count) }
-    else { format!("echo: {text}") }
+    else { FREE_TEXT_REPLY.to_string() }
 }
 
 async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg_count: u64, client: &Client) -> String {
@@ -747,9 +749,9 @@ mod tests {
     // ── dispatch ─────────────────────────────────────────────────────────────
 
     #[test]
-    fn dispatch_plain_text_echoes() {
+    fn dispatch_plain_text_returns_standard_reply() {
         let t = Instant::now();
-        assert_eq!(dispatch("hello world", &Role::User, &t, 0), "echo: hello world");
+        assert_eq!(dispatch("hello world", &Role::User, &t, 0), FREE_TEXT_REPLY);
     }
 
     #[test]
