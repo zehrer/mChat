@@ -620,6 +620,12 @@ async fn main() -> anyhow::Result<()> {
                      \nhttps://github.com/zehrer/mChat"
                 );
                 send_reply(&client, sender_pubkey, &welcome).await;
+                let notify = format!(
+                    "New access request from {label}\n\
+                     /authorize {} to grant access · /user block {} to reject",
+                    user.id, user.id
+                );
+                notify_admins(&client, &notify, &sender_hex).await;
             }
         }
     }
@@ -633,6 +639,18 @@ async fn send_reply(client: &Client, pubkey: PublicKey, text: &str) {
     match client.send_private_msg(pubkey, text, None).await {
         Ok(_) => println!("  → replied (NIP-17)"),
         Err(e) => println!("  → send failed: {e}"),
+    }
+}
+
+async fn notify_admins(client: &Client, message: &str, exclude_pubkey: &str) {
+    let roles = load_roles();
+    for pk in load_pubkey_file(&whitelist_path()) {
+        if pk == exclude_pubkey { continue; }
+        if roles.get(&pk) != Some(&Role::Admin) { continue; }
+        if let Ok(admin_pubkey) = PublicKey::from_hex(&pk) {
+            println!("  → notifying admin {}", shorten(&pk));
+            send_reply(client, admin_pubkey, message).await;
+        }
     }
 }
 
