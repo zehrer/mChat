@@ -310,36 +310,15 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
             lines.join("\n")
         }
 
-        "/authorize" => {
-            let Ok(id) = args.parse::<u32>() else {
-                return "Usage: /authorize <id>".to_string();
-            };
-            match pubkey_for_id(id) {
-                None => format!("No user with id #{id}"),
-                Some((pubkey, info)) => {
-                    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
-                    remove_pubkey(&blocked_path(), &pubkey);
-                    if !load_pubkey_file(&whitelist_path()).contains(&pubkey) {
-                        append_pubkey(&whitelist_path(), &pubkey);
-                    }
-                    // Explicitly added via command → user role (unless already admin)
-                    let mut roles = load_roles();
-                    roles.entry(pubkey.clone()).or_insert(Role::User);
-                    save_roles(&roles);
-                    format!("{} authorized.", display_name(&info, &pubkey))
-                }
-            }
-        }
-
         "/help" => format!(
             "/ping — alive check\n\
              /echo <text> — send text back\n\
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
              /user details <id> — full profile (re-fetches from relays)\n\
+             /user authorize <id> — grant full access and notify user\n\
              /user block <id> — block a user and notify them (admin only)\n\
              /user delete <id> — remove user from all lists (admin only)\n\
-             /authorize <id> — grant full access\n\
              /help — this message\n\
              Your role: {caller_role}"
         ),
@@ -366,6 +345,9 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
     if let Some(rest) = trimmed.strip_prefix("/user details") {
         return cmd_user_details(rest.trim(), client).await;
     }
+    if let Some(rest) = trimmed.strip_prefix("/user authorize") {
+        return cmd_user_authorize(rest.trim(), client).await;
+    }
     if let Some(rest) = trimmed.strip_prefix("/user block") {
         if role != &Role::Admin {
             return "Permission denied: only admins can block users.".to_string();
@@ -379,6 +361,29 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
         return cmd_user_delete(rest.trim());
     }
     dispatch(text, role, start_time, msg_count)
+}
+
+async fn cmd_user_authorize(args: &str, client: &Client) -> String {
+    let id_str = args.trim_start_matches('#');
+    let Ok(id) = id_str.parse::<u32>() else {
+        return "Usage: /user authorize <id>".to_string();
+    };
+    let Some((pubkey, info)) = pubkey_for_id(id) else {
+        return format!("No user with id #{id}");
+    };
+    let mut p = load_pending(); p.remove(&pubkey); save_pending(&p);
+    remove_pubkey(&blocked_path(), &pubkey);
+    if !load_pubkey_file(&whitelist_path()).contains(&pubkey) {
+        append_pubkey(&whitelist_path(), &pubkey);
+    }
+    let mut roles = load_roles();
+    roles.entry(pubkey.clone()).or_insert(Role::User);
+    save_roles(&roles);
+    if let Ok(target) = PublicKey::from_hex(&pubkey) {
+        send_reply(client, target,
+            "Your access request has been approved! Send /help to see available commands.").await;
+    }
+    format!("{} authorized.", display_name(&info, &pubkey))
 }
 
 async fn cmd_user_block(args: &str, client: &Client) -> String {
@@ -622,7 +627,7 @@ async fn main() -> anyhow::Result<()> {
                 send_reply(&client, sender_pubkey, &welcome).await;
                 let notify = format!(
                     "New access request from {label}\n\
-                     /authorize {} to grant access · /user block {} to reject",
+                     /user authorize {} to grant access · /user block {} to reject",
                     user.id, user.id
                 );
                 notify_admins(&client, &notify, &sender_hex).await;
@@ -810,7 +815,7 @@ mod tests {
     fn cmd_help_contains_all_commands() {
         let t = Instant::now();
         let r = handle_command("/help", &Role::Admin, &t, 0);
-        for cmd in &["/ping", "/echo", "/status", "/user", "/authorize", "/user block", "/user delete", "/user details", "/help"] {
+        for cmd in &["/ping", "/echo", "/status", "/user", "/user authorize", "/user block", "/user delete", "/user details", "/help"] {
             assert!(r.contains(cmd), "help missing {cmd}");
         }
     }
@@ -838,11 +843,12 @@ mod tests {
         assert!(r.contains("Usage: /user block"));
     }
 
-    #[test]
-    fn cmd_authorize_bad_arg() {
+    #[tokio::test]
+    async fn cmd_user_authorize_bad_arg() {
         let t = Instant::now();
-        let r = handle_command("/authorize abc", &Role::User, &t, 0);
-        assert!(r.contains("Usage: /authorize"));
+        let client = Client::new(Keys::generate());
+        let r = dispatch_with_client("/user authorize abc", &Role::User, &t, 0, &client).await;
+        assert!(r.contains("Usage: /user authorize"));
     }
 
     // ── file-based tests (use MCLICHAT_DIR) ──────────────────────────────────
