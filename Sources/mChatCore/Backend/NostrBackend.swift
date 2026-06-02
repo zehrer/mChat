@@ -3,11 +3,11 @@ import Foundation
 /// Nostr implementation of `MessagingBackend`.
 ///
 /// Supported conversation types:
-/// - `.oneToOne`  → NIP-04 encrypted direct messages (kind 4)
+/// - `.oneToOne`  → NIP-17 sealed-sender DMs (kind 1059); also receives NIP-04 (kind 4)
 /// - `.group`     → NIP-28 channel messages (kind 42)  [stubbed, Phase 2]
 public actor NostrBackend: MessagingBackend {
 
-    public let chatProtocol: ChatProtocol = .nostr
+    public nonisolated let chatProtocol: ChatProtocol = .nostr
 
     private let keyPair: NostrKeyPair
     private let client: NostrClient
@@ -31,6 +31,7 @@ public actor NostrBackend: MessagingBackend {
             await client.addRelay(url: url)
         }
         await subscribeToIncomingDMs()
+        await subscribeToIncomingGiftWraps()
     }
 
     public func disconnect() async {
@@ -50,6 +51,23 @@ public actor NostrBackend: MessagingBackend {
 
     public func incomingMessages() -> AsyncStream<ChatMessage> {
         incomingStream
+    }
+
+    public func publishRelayList() async throws {
+        let event = try NostrEvent.relayList(relays: NostrClient.defaultRelays, keyPair: keyPair)
+        await client.publish(event: event)
+    }
+
+    public func publishDMRelayList() async throws {
+        let event = try NostrEvent.dmRelayList(relays: NostrClient.defaultRelays, keyPair: keyPair)
+        await client.publish(event: event)
+    }
+
+    public func publishProfile(name: String, about: String?) async throws {
+        let event = try NostrEvent.metadata(
+            name: name, about: about, picture: nil, nip05: nil, keyPair: keyPair
+        )
+        await client.publish(event: event)
     }
 
     public func loadHistory(for conversation: Conversation, limit: Int) async throws -> [ChatMessage] {
@@ -97,7 +115,7 @@ public actor NostrBackend: MessagingBackend {
     // MARK: - Private helpers
 
     private func sendDM(text: String, to peerPubkey: String, conversationId: String) async throws -> ChatMessage {
-        let event = try NostrEvent.encryptedDM(
+        let event = try NostrEvent.giftWrap(
             content: text,
             recipientPubkey: peerPubkey,
             keyPair: keyPair
@@ -108,7 +126,7 @@ public actor NostrBackend: MessagingBackend {
             conversationId: conversationId,
             senderIdentifier: keyPair.publicKeyHex,
             content: text,
-            timestamp: event.date,
+            timestamp: Date(),
             fromMe: true,
             deliveryStatus: .sending,
             protocol: .nostr
@@ -139,7 +157,8 @@ public actor NostrBackend: MessagingBackend {
     private func subscribeToIncomingDMs() async {
         let myPubkey = keyPair.publicKeyHex
         let privkeyBytes = keyPair.privateKeyBytes
-        let filter = NostrFilter.incomingDMs(for: myPubkey)
+        let since = Int(Date().timeIntervalSince1970)
+        let filter = NostrFilter.incomingDMs(for: myPubkey, since: since)
 
         await client.subscribe(filter: filter) { [weak self] event in
             guard let self else { return }
@@ -149,6 +168,27 @@ public actor NostrBackend: MessagingBackend {
                 myPrivkeyBytes: privkeyBytes
             ) else { return }
             await self.yield(msg)
+        }
+    }
+
+    private func subscribeToIncomingGiftWraps() async {
+        let myPubkey = keyPair.publicKeyHex
+        let privkeyBytes = keyPair.privateKeyBytes
+        let since = Int(Date().timeIntervalSince1970)
+        let filter = NostrFilter.incomingGiftWraps(for: myPubkey, since: since)
+
+        await client.subscribe(filter: filter) { [weak self] event in
+            guard let self else { return }
+            do {
+                let msg = try ChatMessage.fromNostrGiftWrap(
+                    event: event,
+                    myPubkeyHex: myPubkey,
+                    myPrivkeyBytes: privkeyBytes
+                )
+                await self.yield(msg)
+            } catch {
+                print("[giftwrap] decrypt FAILED \(event.id.prefix(8))…: \(error)")
+            }
         }
     }
 

@@ -62,6 +62,13 @@ extension NostrFilter {
         NostrFilter(authors: [pubkeyHex], kinds: [NostrKind.encryptedDM.rawValue], since: since, limit: 100)
     }
 
+    /// Subscribes to incoming NIP-17 gift-wrap events (kind 1059) for the given pubkey.
+    public static func incomingGiftWraps(for pubkeyHex: String, since: Int? = nil) -> NostrFilter {
+        var f = NostrFilter(kinds: [NostrKind.giftWrap.rawValue], since: since, limit: 100)
+        f.tags = ["#p": [pubkeyHex]]
+        return f
+    }
+
     /// Subscribes to metadata (kind 0) for a list of pubkeys.
     public static func metadata(for pubkeys: [String]) -> NostrFilter {
         NostrFilter(authors: pubkeys, kinds: [NostrKind.metadata.rawValue], limit: pubkeys.count)

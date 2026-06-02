@@ -14,7 +14,7 @@ import Foundation
 public protocol MessagingBackend: Actor {
 
     /// The protocol this backend implements.
-    var chatProtocol: ChatProtocol { get }
+    nonisolated var chatProtocol: ChatProtocol { get }
 
     // MARK: - Lifecycle
 
