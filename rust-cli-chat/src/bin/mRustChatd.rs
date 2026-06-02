@@ -267,11 +267,10 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
 
             // Lazily assign IDs to any listed pubkey not yet in users.json so
             // every user shown here has an #ID that /authorize and /block can target.
-            // Skip pubkeys that fail hex validation (stale/corrupt data).
+            // Invalid pubkeys are NOT assigned IDs — they appear as warnings instead.
             let mut dirty = false;
             for pk in whitelist.iter().chain(pending.keys()).chain(blocked.iter()) {
-                if !users.contains_key(pk) {
-                    if PublicKey::from_hex(pk).is_err() { continue; }
+                if !users.contains_key(pk) && PublicKey::from_hex(pk).is_ok() {
                     let next_id = users.values().map(|u| u.id).max().unwrap_or(0) + 1;
                     users.insert(pk.clone(), UserInfo { id: next_id, nip05: String::new(), name: String::new() });
                     dirty = true;
@@ -280,24 +279,33 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
             if dirty { save_users(&users); }
 
             let mut entries: Vec<(u32, String)> = vec![];
+            let mut corrupt: Vec<String> = vec![];
 
             for pk in &whitelist {
+                if PublicKey::from_hex(pk).is_err() { corrupt.push(format!("({pk})  [auth][CORRUPT]")); continue; }
                 let role = roles.get(pk).unwrap_or(&Role::Admin);
                 let u = &users[pk];
                 entries.push((u.id, format!("{}  [auth][{role}]", display_name(u, pk))));
             }
             for (pk, n) in &pending {
+                if PublicKey::from_hex(pk).is_err() { corrupt.push(format!("({pk})  [pending {n}/{SPAM_THRESHOLD}][CORRUPT]")); continue; }
                 let u = &users[pk];
                 entries.push((u.id, format!("{}  [pending {n}/{SPAM_THRESHOLD}]", display_name(u, pk))));
             }
             for pk in &blocked {
+                if PublicKey::from_hex(pk).is_err() { corrupt.push(format!("({pk})  [blocked][CORRUPT]")); continue; }
                 let u = &users[pk];
                 entries.push((u.id, format!("{}  [blocked]", display_name(u, pk))));
             }
 
-            if entries.is_empty() { return "No senders yet.".to_string(); }
+            if entries.is_empty() && corrupt.is_empty() { return "No senders yet.".to_string(); }
             entries.sort_by_key(|(id, _)| *id);
-            entries.into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
+            let mut lines: Vec<String> = entries.into_iter().map(|(_, s)| s).collect();
+            if !corrupt.is_empty() {
+                lines.push("-- corrupt entries (remove manually from data files) --".to_string());
+                lines.extend(corrupt);
+            }
+            lines.join("\n")
         }
 
         "/authorize" => {
