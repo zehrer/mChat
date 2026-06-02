@@ -1,7 +1,7 @@
 use nostr_sdk::prelude::*;
 use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::{Duration, Instant}};
 
-const VERSION: &str = "mRustChatd v0.0.2";
+const VERSION: &str = "mChatd v0.0.2";
 const SPAM_THRESHOLD: u32 = 5;
 // Placeholder until LLM integration; replace this constant to swap the response.
 const FREE_TEXT_REPLY: &str = "I can only respond to commands for now. Send /help for the list.";

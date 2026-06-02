@@ -7,7 +7,7 @@
 
 ## 1. Project Overview
 
-mChat is a Nostr-based messaging system consisting of a shared Swift library (**mChatCore**) and two reference daemon implementations — one in Swift (**mSwiftChatd**) and one in Rust (**mRustChatd**). The daemons act as always-on agents: they receive encrypted DMs, apply access control, respond to commands, and can be extended to run automated tasks.
+mChat is a Nostr-based messaging system consisting of a shared Swift library (**mChatCore**) and two reference daemon implementations — one in Swift (**mSwiftChatd**) and one in Rust (**mChatd**). The daemons act as always-on agents: they receive encrypted DMs, apply access control, respond to commands, and can be extended to run automated tasks.
 
 **Scope of this document:** the two CLI daemons and the mChatCore library.  
 **Out of scope:** the iOS/macOS mChat app UI, APNs integration, media handling.
@@ -25,7 +25,7 @@ mChat is a Nostr-based messaging system consisting of a shared Swift library (**
 ├── users.json          # {"pubkey": {id, nip05, name}} — display names
 ├── config.toml         # [swift] / [rust] name and about strings
 ├── swift_echo.key      # mSwiftChatd private key (hex)
-└── mchatd.key          # mRustChatd private key (hex)
+└── mchatd.key          # mChatd private key (hex)
 
 Sources/
 ├── mChatCore/          # Swift library: Nostr protocol, crypto, models
@@ -39,7 +39,7 @@ Sources/
 
 rust-cli-chat/
 └── src/bin/
-    └── mRustChatd.rs   # Rust daemon (standalone, mirrors mSwiftChatd behaviour)
+    └── mChatd.rs   # Rust daemon (standalone, mirrors mSwiftChatd behaviour)
 ```
 
 **Protocol stack:**
@@ -112,7 +112,7 @@ Examples: `feat: add /authorize command`, `fix: startup grace period for relay b
 | `make deploy` | **Primary dev loop** — build both release binaries, stop daemons, restart |
 | `make test` | Run all unit tests (Swift + Rust) |
 | `make test-swift` | Swift unit tests only (`swift test`) |
-| `make test-rust` | Rust unit tests only (`cargo test --bin mRustChatd`) |
+| `make test-rust` | Rust unit tests only (`cargo test --bin mChatd`) |
 | `make test-rust-verbose` | Rust tests with stdout output |
 | `make build` | Debug build only (no restart) |
 | `make build-release` | Release build only (no restart) |
@@ -133,7 +133,7 @@ name  = "mSwiftChatd v0.0.2"
 about = "Swift Agent Daemon https://github.com/zehrer/mChat"
 
 [rust]
-name  = "mRustChatd v0.0.2"
+name  = "mChatd v0.0.2"
 about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 ```
 
@@ -227,7 +227,7 @@ about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 
 Run with `make test`.
 
-**Rust** (`rust-cli-chat/src/bin/mRustChatd.rs`, `#[cfg(test)]` module):
+**Rust** (`rust-cli-chat/src/bin/mChatd.rs`, `#[cfg(test)]` module):
 
 | Test | Covers |
 |---|---|

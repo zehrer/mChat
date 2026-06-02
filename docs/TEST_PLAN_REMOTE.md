@@ -1,4 +1,4 @@
-# mRustChatd — Remote Verification Test Plan
+# mChatd — Remote Verification Test Plan
 
 Execute all tests by sending DMs from Nostur (or any Nostr client) to the daemon.
 
@@ -83,7 +83,7 @@ The pending user has no display name yet. First send `/user` to confirm their ID
 
 | # | Action | Expected | Pass |
 |---|---|---|---|
-| T16 | Send any message from the new account | Welcome message: `Hello! This is mRustChatd v0.0.2. Your contact request has been received…` | ☐ |
+| T16 | Send any message from the new account | Welcome message: `Hello! This is mChatd v0.0.2. Your contact request has been received…` | ☐ |
 | T17 | Send a second message from same account | `Your access request is still pending authorization.` | ☐ |
 | T18 | From admin, send `/user` | New account appears in list with `[pending 2/5]` | ☐ |
 | T19 | From admin, send `/authorize <new user id>` | New user authorized | ☐ |
