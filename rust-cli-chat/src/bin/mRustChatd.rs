@@ -267,9 +267,11 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
 
             // Lazily assign IDs to any listed pubkey not yet in users.json so
             // every user shown here has an #ID that /authorize and /block can target.
+            // Skip pubkeys that fail hex validation (stale/corrupt data).
             let mut dirty = false;
             for pk in whitelist.iter().chain(pending.keys()).chain(blocked.iter()) {
                 if !users.contains_key(pk) {
+                    if PublicKey::from_hex(pk).is_err() { continue; }
                     let next_id = users.values().map(|u| u.id).max().unwrap_or(0) + 1;
                     users.insert(pk.clone(), UserInfo { id: next_id, nip05: String::new(), name: String::new() });
                     dirty = true;
@@ -385,7 +387,11 @@ async fn cmd_user_details(args: &str, client: &Client) -> String {
         return format!("No user with id #{id}");
     };
     let Ok(pubkey) = PublicKey::from_hex(&pubkey_hex) else {
-        return "Invalid pubkey stored for that user.".to_string();
+        return format!(
+            "Stale/corrupt pubkey for #{id}: {pubkey_hex} ({} chars, expected 64).\n\
+             Remove it by deleting the entry from ~/.mCLIChat/users.json and pending.json.",
+            pubkey_hex.len()
+        );
     };
 
     let meta = fetch_profile(client, pubkey).await;
