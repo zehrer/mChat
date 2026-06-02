@@ -316,7 +316,7 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
              /user details <id> — full profile (re-fetches from relays)\n\
-             /user authorize <id> — grant full access and notify user\n\
+             /user authorize <id> (/user auth <id>) — grant full access and notify user\n\
              /user block <id> — block a user and notify them (admin only)\n\
              /user delete <id> — remove user from all lists (admin only)\n\
              /help — this message\n\
@@ -345,7 +345,8 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
     if let Some(rest) = trimmed.strip_prefix("/user details") {
         return cmd_user_details(rest.trim(), client).await;
     }
-    if let Some(rest) = trimmed.strip_prefix("/user authorize") {
+    if let Some(rest) = trimmed.strip_prefix("/user authorize")
+        .or_else(|| trimmed.strip_prefix("/user auth")) {
         return cmd_user_authorize(rest.trim(), client).await;
     }
     if let Some(rest) = trimmed.strip_prefix("/user block") {
