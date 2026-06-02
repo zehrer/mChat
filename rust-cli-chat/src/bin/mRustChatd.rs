@@ -311,15 +311,15 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
         }
 
         "/help" => format!(
-            "/ping — alive check\n\
+            "/p(ing) — alive check\n\
              /echo <text> — send text back\n\
-             /status — daemon info\n\
-             /user — sender list with IDs, access state and role\n\
-             /user details <id> — full profile (re-fetches from relays)\n\
+             /s(tatus) — daemon info\n\
+             /u(ser) — sender list with IDs, access state and role\n\
+             /user det(ails) <id> — full profile (re-fetches from relays)\n\
              /user auth(orize) <id> — grant full access and notify user\n\
-             /user block <id> — block a user and notify them (admin only)\n\
-             /user delete <id> — remove user from all lists (admin only)\n\
-             /help — this message\n\
+             /user bl(ock) <id> — block a user and notify them (admin only)\n\
+             /user del(ete) <id> — remove user from all lists (admin only)\n\
+             /h(elp) — this message\n\
              Your role: {caller_role}"
         ),
 
@@ -340,8 +340,40 @@ fn dispatch(text: &str, role: &Role, start_time: &Instant, msg_count: u64) -> St
     else { FREE_TEXT_REPLY.to_string() }
 }
 
+// Returns `Some(long + rest)` when text is exactly `short` or `short + " " + rest`.
+// Word-boundary check prevents "/user bl" matching "/user block".
+fn expand_one(text: &str, short: &str, long: &str) -> Option<String> {
+    if text == short { return Some(long.to_string()); }
+    text.strip_prefix(short)
+        .filter(|r| r.starts_with(' '))
+        .map(|r| format!("{long}{r}"))
+}
+
+fn expand_user_shortcuts(text: &str) -> String {
+    // Longest prefix first to avoid false sub-matches.
+    for (short, long) in &[
+        ("/user det", "/user details"),
+        ("/user del", "/user delete"),
+        ("/user bl",  "/user block"),
+    ] {
+        if let Some(e) = expand_one(text, short, long) { return e; }
+    }
+    text.to_string()
+}
+
+fn expand_shortcuts(text: &str) -> String {
+    // /u expands to /user and then subcommand shortcuts are applied.
+    if let Some(e) = expand_one(text, "/u", "/user") { return expand_user_shortcuts(&e); }
+    if let Some(e) = expand_one(text, "/p", "/ping")   { return e; }
+    if let Some(e) = expand_one(text, "/s", "/status") { return e; }
+    if let Some(e) = expand_one(text, "/h", "/help")   { return e; }
+    // Full-form /user prefix — still expand subcommand shortcuts.
+    expand_user_shortcuts(text)
+}
+
 async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg_count: u64, client: &Client) -> String {
-    let trimmed = text.trim();
+    let expanded = expand_shortcuts(text.trim());
+    let trimmed = expanded.as_str();
     if let Some(rest) = trimmed.strip_prefix("/user details") {
         return cmd_user_details(rest.trim(), client).await;
     }
@@ -361,7 +393,7 @@ async fn dispatch_with_client(text: &str, role: &Role, start_time: &Instant, msg
         }
         return cmd_user_delete(rest.trim());
     }
-    dispatch(text, role, start_time, msg_count)
+    dispatch(trimmed, role, start_time, msg_count)
 }
 
 async fn cmd_user_authorize(args: &str, client: &Client) -> String {
@@ -816,9 +848,44 @@ mod tests {
     fn cmd_help_contains_all_commands() {
         let t = Instant::now();
         let r = handle_command("/help", &Role::Admin, &t, 0);
-        for cmd in &["/ping", "/echo", "/status", "/user", "/user auth", "/user block", "/user delete", "/user details", "/help"] {
+        for cmd in &["/p(ing)", "/echo", "/s(tatus)", "/u(ser)", "/user auth", "/user bl", "/user del", "/user det", "/h(elp)"] {
             assert!(r.contains(cmd), "help missing {cmd}");
         }
+    }
+
+    // ── expand_shortcuts ─────────────────────────────────────────────────────
+
+    #[test]
+    fn shortcuts_top_level() {
+        assert_eq!(expand_shortcuts("/p"),        "/ping");
+        assert_eq!(expand_shortcuts("/s"),        "/status");
+        assert_eq!(expand_shortcuts("/h"),        "/help");
+        assert_eq!(expand_shortcuts("/u"),        "/user");
+        assert_eq!(expand_shortcuts("/p extra"),  "/ping extra");
+        assert_eq!(expand_shortcuts("/s extra"),  "/status extra");
+    }
+
+    #[test]
+    fn shortcuts_user_subcommands() {
+        assert_eq!(expand_shortcuts("/user bl 3"),   "/user block 3");
+        assert_eq!(expand_shortcuts("/user del 3"),  "/user delete 3");
+        assert_eq!(expand_shortcuts("/user det 3"),  "/user details 3");
+    }
+
+    #[test]
+    fn shortcuts_combined_u_plus_subcommand() {
+        assert_eq!(expand_shortcuts("/u bl 3"),   "/user block 3");
+        assert_eq!(expand_shortcuts("/u del 3"),  "/user delete 3");
+        assert_eq!(expand_shortcuts("/u det 3"),  "/user details 3");
+    }
+
+    #[test]
+    fn shortcuts_no_false_expansion() {
+        // Full commands must not be accidentally re-expanded.
+        assert_eq!(expand_shortcuts("/ping"),        "/ping");
+        assert_eq!(expand_shortcuts("/status"),      "/status");
+        assert_eq!(expand_shortcuts("/user block 3"), "/user block 3");
+        assert_eq!(expand_shortcuts("/user delete 3"), "/user delete 3");
     }
 
     #[test]
