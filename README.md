@@ -18,69 +18,40 @@ mChat is built on open protocols and cryptographic identities. No phone number. 
 
 ---
 
-## Features (Phase 1)
+## Components
 
-- **Cryptographic identity** — secp256k1 keypair, stored in iOS Keychain, never transmitted
-- **1:1 encrypted messaging** — NIP-04 (AES-256-CBC + ECDH) over the Nostr relay network
-- **Group chat** — NIP-28 channel support (Phase 2)
-- **Multi-relay** — broadcasts to multiple independent relays simultaneously; no single point of failure
-- **iOS Contacts integration** — link Nostr pubkeys to address book entries; no server-side matching
-- **Local persistence** — SwiftData keeps full message history across app restarts
-- **Contact resolution** — fetches display names and avatars from Nostr metadata events
-- **Multi-protocol architecture** — `MessagingBackend` abstraction ready for Matrix, XMPP, SimpleX, and more
+### mChat — iOS App *(in development)*
+
+SwiftUI app targeting iOS 17+. Uses **NostrEssentials** (`nostur-com/NostrEssentials`) as the Nostr protocol layer — no duplicate implementation.
+
+### mChatd — Rust Daemon
+
+Always-on agent daemon for HomeNode integration. Receives encrypted DMs (NIP-17/NIP-04), applies access control, responds to commands. Written in Rust using `nostr-sdk`.
+
+### mCLIChat — Rust CLI Client
+
+Interactive Nostr chat client. Doubles as an integration test tool for mChatd — connects with a separate keypair and can script command/response sequences.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│              iOS App (SwiftUI)               │
-│  Onboarding · Conversations · Chat · Profile │
-└───────────────────┬─────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────┐
-│              ChatService                     │
-│   routes messages to the correct backend     │
-└───┬───────────────┬──────────────────────────┘
-    │               │
-┌───▼──────┐  ┌─────▼──────────────────────┐
-│  Nostr   │  │  Matrix / XMPP / SimpleX   │
-│ Backend  │  │  (Phase 3 — plug-in ready) │
-└───┬──────┘  └────────────────────────────┘
-    │
-┌───▼──────────────────────────────────────┐
-│          mChatCore  (Swift Package)       │
-│  NostrKeyPair · NostrEvent · NIP04        │
-│  NostrRelay · NostrClient · NostrFilter   │
-│  MessagingBackend protocol                │
-└──────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│           iOS App (SwiftUI)             │
+│  Onboarding · Conversations · Chat      │
+└──────────────────┬──────────────────────┘
+                   │ NostrEssentials
+                   │ (nostur-com/NostrEssentials)
+                   ▼
+            Nostr Relay Network
+                   ▲
+                   │ nostr-sdk (Rust)
+┌──────────────────┴──────────────────────┐
+│              mChatd (Rust)              │
+│  Access control · Commands · NIP-17     │
+└─────────────────────────────────────────┘
 ```
-
-Adding a new protocol requires only a new `MessagingBackend` conformance — no UI or storage changes.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- macOS 14+ (Sonoma)
-- Xcode 15.2+
-- iOS 17+ device or simulator
-
-### Setup
-
-See **[SETUP.md](SETUP.md)** for the full step-by-step Xcode guide. The short version:
-
-1. Clone this repo
-2. Open `Package.swift` in Xcode — SPM resolves `secp256k1.swift` automatically
-3. Create a new Xcode iOS App project, add `mChatCore` as a local package
-4. Add the `Sources/mChat/` folder to the Xcode target
-5. Add `NSContactsUsageDescription` to `Info.plist`
-6. Build and run on an iOS 17 simulator
-
-On first launch, tap **Create New Identity** — your keypair is generated on-device and stored in the Keychain.
 
 ---
 
@@ -88,51 +59,91 @@ On first launch, tap **Create New Identity** — your keypair is generated on-de
 
 ```
 mChat/
-├── Package.swift                   # mChatCore SPM package
-├── REQUIREMENTS.md                 # Full functional & non-functional requirements
-├── SETUP.md                        # Xcode setup guide
-├── docs/
-│   ├── nostr.md                    # Nostr protocol deep-dive
-│   ├── p2p-technologies.md         # P2P & decentralised messaging landscape
-│   └── protocol-candidates.md      # Future protocol recommendations (Matrix, SimpleX…)
-├── Sources/
-│   ├── mChatCore/                  # Platform-independent core library
-│   │   ├── Backend/
-│   │   │   ├── MessagingBackend.swift   # Protocol abstraction
-│   │   │   └── NostrBackend.swift       # Nostr implementation
-│   │   ├── Crypto/
-│   │   │   └── NIP04.swift              # AES-256-CBC encrypted DMs
-│   │   ├── Models/
-│   │   │   ├── ChatMessage.swift
-│   │   │   ├── Contact.swift
-│   │   │   └── Conversation.swift       # 1:1 + group, any protocol
-│   │   └── Nostr/
-│   │       ├── NostrClient.swift        # Multi-relay orchestrator
-│   │       ├── NostrEvent.swift         # NIP-01 event model + signing
-│   │       ├── NostrFilter.swift        # Subscription filters
-│   │       ├── NostrKeyPair.swift       # secp256k1 identity
-│   │       └── NostrRelay.swift         # WebSocket relay actor
-│   └── mChat/                      # iOS app (add to Xcode project)
-│       ├── App/
-│       │   └── mChatApp.swift
-│       ├── Services/
-│       │   ├── ChatService.swift        # Multi-backend orchestrator
-│       │   ├── ContactsIntegrationService.swift  # iOS Contacts (CNContactStore)
-│       │   └── IdentityService.swift    # Keychain key management
-│       ├── Storage/
-│       │   ├── MessageStore.swift       # SwiftData wrapper
-│       │   ├── StoredMessage.swift
-│       │   ├── StoredConversation.swift
-│       │   └── StoredContact.swift
-│       └── Views/
-│           ├── OnboardingView.swift
-│           ├── ConversationListView.swift
-│           ├── ChatView.swift
-│           ├── ContactsView.swift
-│           └── ProfileView.swift
-└── Tests/
-    └── mChatCoreTests/             # Unit tests (swift test / ⌘U)
+├── Cargo.toml              # Rust workspace
+├── Cargo.lock
+├── Makefile
+├── mChatd/                 # Rust daemon
+│   ├── Cargo.toml
+│   └── src/main.rs
+├── mCLIChat/               # Rust CLI client / integration test tool
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       └── contacts.rs
+├── mChat/                  # iOS app (Xcode project, uses NostrEssentials)
+│   ├── App/
+│   ├── Views/
+│   ├── Services/
+│   └── Storage/
+├── Archive/                # Retired Swift implementations (kept for reference)
+│   ├── mSwiftChatd/
+│   ├── mSwiftCLIChat/
+│   ├── mChatCore/
+│   └── mChatCoreTests/
+└── docs/
+    ├── SDP.md              # Software Development Plan
+    ├── TEST_PLAN_REMOTE.md # Remote verification test plan
+    └── ...
 ```
+
+---
+
+## Getting Started
+
+### mChatd (Daemon)
+
+**Prerequisites:** Rust 1.x + Cargo (`rustup`)
+
+```bash
+make build-release   # build
+make deploy          # build + restart daemon
+make test            # run unit tests (33 tests)
+make status          # check if running
+make logs            # tail the log
+```
+
+Data files are stored in `~/.mCLIChat/`. On first run a keypair is generated at `~/.mCLIChat/mchatd.key`.
+
+Configure the daemon profile in `~/.mCLIChat/config.toml`:
+```toml
+[rust]
+name  = "mChatd v0.0.2"
+about = "Rust Agent Daemon https://github.com/zehrer/mChat"
+```
+
+Grant admin access by editing `~/.mCLIChat/roles.json`:
+```json
+{ "YOUR_HEX_PUBKEY": "admin" }
+```
+
+### mCLIChat (CLI Client)
+
+```bash
+cargo run -p mCLIChat    # launch interactive CLI
+```
+
+Commands: `chat <alias|npub>`, `send <alias> <msg>`, `contacts`, `add`, `remove`, `whoami`, `help`
+
+### mChat (iOS App)
+
+iOS app development is in progress. See `mChat/` for current SwiftUI sources.
+
+---
+
+## Daemon Commands
+
+| Command | Description |
+|---|---|
+| `/p(ing)` | Alive check → `pong` |
+| `/s(tatus)` | Version, uptime, relay list, message counts |
+| `/u(ser)` | Sender list with ID, access state, role |
+| `/user det(ails) <id>` | Full profile re-fetched from relays |
+| `/user auth(orize) <id>` | Grant access and notify user |
+| `/user bl(ock) <id>` | Block user and notify them *(admin only)* |
+| `/user del(ete) <id>` | Remove from all lists *(admin only)* |
+| `/h(elp)` | Command list + your current role |
+
+Shortcuts: `/p` = `/ping`, `/s` = `/status`, `/h` = `/help`, `/u` = `/user`, `/u bl 3` = `/user block 3`, etc.
 
 ---
 
@@ -140,12 +151,21 @@ mChat/
 
 | Phase | Status | What's included |
 |---|---|---|
-| **1 — Foundation** | ✅ Done | Nostr identity, NIP-04 DMs, multi-relay, SwiftUI app, Contacts integration, SwiftData persistence |
-| **2 — Privacy & Groups** | 🔜 Next | NIP-17 Gift Wrap (sealed sender), NIP-44 encryption, NIP-28 groups, relay management UI |
-| **3 — Multi-Protocol** | 📅 Planned | Matrix backend (Olm/Megolm), SimpleX backend (no identifiers) |
-| **4 — Breadth** | 📅 Planned | XMPP+OMEMO, Session, Delta Chat (email transport) |
+| **Daemon v0.0.2** | ✅ Done | NIP-17/NIP-04 reception, access control, roles, user registry, command shortcuts, admin notifications |
+| **Daemon v0.1.0** | 🔜 Next | Auto-reconnect on relay drop (REQ-50–54), mCLIChat integration tests |
+| **iOS App MVP** | 🔜 Next | NostrEssentials integration, 1:1 NIP-17 messaging, identity onboarding |
+| **iOS App v1.0** | 📅 Planned | NIP-44 encryption, group chat (NIP-28), contacts integration, SwiftData persistence |
+| **HomeNode integration** | 📅 Planned | mChatd embedded as agent backend |
 
-See [docs/protocol-candidates.md](docs/protocol-candidates.md) for the full protocol evaluation and reasoning.
+---
+
+## Privacy Principles
+
+1. **Private key never leaves your device** — stored in iOS Keychain / local file, never transmitted
+2. **No phone number, no email, no registration** — identity is a cryptographic keypair
+3. **No contact list uploaded** — address book integration is fully on-device
+4. **No telemetry** — zero analytics
+5. **Open source** — every line is auditable
 
 ---
 
@@ -153,29 +173,16 @@ See [docs/protocol-candidates.md](docs/protocol-candidates.md) for the full prot
 
 | Document | Description |
 |---|---|
-| [REQUIREMENTS.md](REQUIREMENTS.md) | Functional and non-functional requirements, open questions |
-| [SETUP.md](SETUP.md) | Xcode project setup step-by-step |
-| [docs/nostr.md](docs/nostr.md) | Nostr protocol deep-dive: events, encryption, relays, NIPs |
-| [docs/p2p-technologies.md](docs/p2p-technologies.md) | P2P landscape: Nostr, Matrix, Pear, XMPP, libp2p, Briar… |
-| [docs/protocol-candidates.md](docs/protocol-candidates.md) | Future protocol candidates with prioritised recommendations |
-
----
-
-## Privacy Principles
-
-1. **Private key never leaves your device** — stored in iOS Keychain, never transmitted
-2. **No phone number, no email, no registration** — identity is a cryptographic keypair
-3. **No contact list uploaded** — address book integration is fully on-device
-4. **No telemetry** — zero analytics by default
-5. **Open source** — every line is auditable
+| [docs/SDP.md](docs/SDP.md) | Software Development Plan — architecture, requirements, test plan |
+| [docs/TEST_PLAN_REMOTE.md](docs/TEST_PLAN_REMOTE.md) | Remote verification test plan for mChatd |
+| [REQUIREMENTS.md](REQUIREMENTS.md) | Full functional and non-functional requirements |
+| [SETUP.md](SETUP.md) | Setup guide |
 
 ---
 
 ## Contributing
 
-Issues and pull requests are welcome. See [REQUIREMENTS.md](REQUIREMENTS.md) for the current scope and open questions.
-
-This project follows the development standards defined in [zehrer/development](https://github.com/zehrer/development): branch protection, PR-based workflow, and conventional commit messages.
+Issues and pull requests are welcome. See [REQUIREMENTS.md](REQUIREMENTS.md) for the current scope.
 
 ---
 
