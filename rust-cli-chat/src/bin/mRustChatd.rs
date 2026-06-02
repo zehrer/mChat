@@ -316,7 +316,7 @@ fn handle_command(text: &str, caller_role: &Role, start_time: &Instant, msg_coun
              /status — daemon info\n\
              /user — sender list with IDs, access state and role\n\
              /user details <id> — full profile (re-fetches from relays)\n\
-             /user authorize <id> (/user auth <id>) — grant full access and notify user\n\
+             /user auth(orize) <id> — grant full access and notify user\n\
              /user block <id> — block a user and notify them (admin only)\n\
              /user delete <id> — remove user from all lists (admin only)\n\
              /help — this message\n\
@@ -816,7 +816,7 @@ mod tests {
     fn cmd_help_contains_all_commands() {
         let t = Instant::now();
         let r = handle_command("/help", &Role::Admin, &t, 0);
-        for cmd in &["/ping", "/echo", "/status", "/user", "/user authorize", "/user block", "/user delete", "/user details", "/help"] {
+        for cmd in &["/ping", "/echo", "/status", "/user", "/user auth", "/user block", "/user delete", "/user details", "/help"] {
             assert!(r.contains(cmd), "help missing {cmd}");
         }
     }
