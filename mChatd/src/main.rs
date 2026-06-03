@@ -544,8 +544,8 @@ async fn main() -> anyhow::Result<()> {
     ensure_whitelist();
 
     let keys = load_or_create_keys()?;
-    println!("mRustChatd pubkey : {}", keys.public_key().to_hex());
-    println!("mRustChatd npub   : {}", keys.public_key().to_bech32()?);
+    println!("mChatd pubkey : {}", keys.public_key().to_hex());
+    println!("mChatd npub   : {}", keys.public_key().to_bech32()?);
 
     let client = Client::new(keys.clone());
     for url in DEFAULT_RELAYS { client.add_relay(*url).await?; }

@@ -12,12 +12,18 @@ deploy: build-release stop
 # ---------------------------------------------------------------------------
 # test
 # ---------------------------------------------------------------------------
-.PHONY: test test-verbose
+.PHONY: test test-verbose test-integration
 test:
 	cargo test -p mChatd
 
 test-verbose:
 	cargo test -p mChatd -- --nocapture
+
+test-integration:
+	@echo "Building mCLIChat…"
+	@cargo build -p mCLIChat 2>&1 | tail -1
+	@echo "Running integration tests against live mChatd…"
+	mCLIChat/tests/integration_test.sh
 
 # ---------------------------------------------------------------------------
 # build

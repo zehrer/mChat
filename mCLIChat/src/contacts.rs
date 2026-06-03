@@ -4,10 +4,7 @@ use std::{collections::HashMap, fs, path::PathBuf};
 pub type Contacts = HashMap<String, String>;
 
 pub fn contacts_path() -> PathBuf {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    home.join(".mCLIChat").join("contacts.json")
+    crate::mclichat_dir().join("contacts.json")
 }
 
 pub fn load() -> Contacts {
