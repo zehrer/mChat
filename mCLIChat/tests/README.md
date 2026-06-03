@@ -52,8 +52,11 @@ bash mCLIChat/tests/integration_test.sh
 # Interactive CLI — uses ~/.mCLIChat/identity.key
 mCLIChat
 
-# Test client — uses ~/.mCLIChat-test/identity.key
+# Admin test client — uses ~/.mCLIChat-test/identity.key
 MCLICHAT_DIR=~/.mCLIChat-test mCLIChat
+
+# User test client — uses ~/.mCLIChat-test2/identity.key
+MCLICHAT_DIR=~/.mCLIChat-test2 mCLIChat
 
 # One-off send as test identity
 MCLICHAT_DIR=~/.mCLIChat-test mCLIChat --send <npub> "/ping"
@@ -66,22 +69,34 @@ MCLICHAT_DIR=~/.mCLIChat-test mCLIChat --whoami
 
 ## Test coverage
 
-| Block | Tests | Coverage |
-|---|---|---|
-| 1 — Basic Connectivity | T01–T05 | `/ping`, free-text reply, `/echo`, unknown command |
-| 2 — Status & Help | T06–T08 | `/status`, `/user`, `/help` + role |
-| 4 — Shortcuts | T13–T16 | `/p`, `/s`, `/h`, `/u` |
-| 5 — User Details | T17–T19 | `/user det`, not-found |
-| 6 — Admin Commands | T20–T26 | authorize, block, shortcut variants |
-| 8 — Delete | T34–T36 | `/user del`, not-found |
+| Block | Tests | Identity | Coverage |
+|---|---|---|---|
+| 1 — Basic Connectivity | T01–T05 | admin | `/ping`, free-text reply, `/echo`, unknown command |
+| 2 — Status & Help | T06–T08 | admin | `/status`, `/user`, `/help` + role |
+| 3 — Role Enforcement | T09–T12 | user | permission denied on admin commands |
+| 4 — Shortcuts | T13–T16 | admin | `/p`, `/s`, `/h`, `/u` |
+| 5 — User Details | T17–T19 | admin | `/user det`, not-found |
+| 6 — Admin Commands | T20–T26 | admin | authorize, block, shortcut variants |
+| 7 — New User Flow | T27–T33 | user (deleted+re-registered) | welcome, pending, authorize, ping |
+| 8 — Delete | T34–T37 | admin + user | `/user del`, not-found, permission denied |
 
-**Automated:** Blocks 1, 2, 4, 5, 6, 8 (when test data is present)
+**Automated:** Blocks 1–8
 
-**Manual only** (require a separate device or Nostr client):
-- Block 3 — Role enforcement from a non-admin account
-- Block 7 — New user flow (welcome, admin notification, authorize, ping)
+**Skipped within Block 7** (NIP-17 inbox checks — require a Nostr client):
+- T28 — admin receives new-user notification
+- T32 — new user receives approval message
+
+**Manual only** (require server access or a Nostr client):
 - Block 9 — Relay backlog / startup grace period
 - Block 10 — NIP-17 delivery verification in Nostur
+
+### How Block 7 works without a fresh device
+
+Deleting a user from the daemon removes them from all lists. When they next send
+a message the daemon treats them as unknown and runs the full new-user flow.
+The test suite deletes the user identity (`~/.mCLIChat-test2/`) at the start of
+Block 7 and re-contacts the daemon, then verifies welcome → pending → authorize →
+ping without needing a separate Nostr account.
 
 See [docs/TEST_PLAN_REMOTE.md](../../docs/TEST_PLAN_REMOTE.md) for the full manual checklist.
 

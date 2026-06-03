@@ -1,6 +1,6 @@
 # Software Development Plan — mChat
 
-**Version:** 0.4
+**Version:** 0.5
 **Status:** Active
 
 ---
@@ -236,12 +236,23 @@ Run with `make test`. All 33 tests in `mChatd/src/main.rs` (`#[cfg(test)]`):
 | `get_role_defaults_to_user`, `_admin_from_file` | REQ-27, REQ-28 |
 | `ensure_whitelist_creates_file_with_header`, `_is_idempotent` | REQ-40 |
 
-### 6.2 Integration Tests *(planned)*
+### 6.2 Integration Tests
 
-`mCLIChat` will be used as a second-user test client to automate end-to-end scenarios:
-- Connect with a separate keypair
-- Send commands to mChatd via NIP-17
-- Assert responses match expected output
+`mCLIChat --send` drives end-to-end scenarios against a live mChatd. Two test identities (`~/.mCLIChat-test/` admin, `~/.mCLIChat-test2/` user) cover all automated blocks. Run with `make test-integration`.
+
+| Block | Tests | Identity | Covers |
+|---|---|---|---|
+| 1 | T01–T05 | admin | Basic connectivity (ping, echo, unknown cmd) |
+| 2 | T06–T08 | admin | Status, user list, help |
+| 3 | T09–T12 | user | Role enforcement (user cannot admin-cmd) |
+| 4 | T13–T16 | admin | Command shortcuts |
+| 5 | T17–T19 | admin | User details / not-found |
+| 6 | T20–T26 | admin | Authorize / block / re-auth (requires bot) |
+| 7 | T27–T33 | user | New-user welcome → pending → authorize flow |
+| 8 | T34–T37 | admin | Delete user; permission guard |
+| 9–10 | manual | — | HomeNode remote (Block 9), Nostur app (Block 10) |
+
+**Block 7 technique:** delete the user identity from daemon lists → re-contact → daemon treats it as a brand-new unknown user, exercising the full onboarding flow without a separate Nostr account.
 
 ### 6.3 Manual Verification
 
@@ -249,7 +260,35 @@ See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification 
 
 ---
 
-## 7. Known Issues
+---
+
+## 7. Code Quality KPIs
+
+Tracked per release. Run locally with `make quality` *(target TBD)*.
+
+| KPI | Tool | Target | Notes |
+|---|---|---|---|
+| Unit test pass rate | `cargo test -p mChatd` | 100 % | 33 tests; gate for every commit |
+| Integration test pass rate | `make test-integration` | 100 % automated (skip bot-only) | Automated blocks 1–8 |
+| Compiler warnings | `cargo build` | 0 warnings | `-D warnings` in CI |
+| Clippy lints | `cargo clippy` | 0 warnings | `--deny warnings` |
+| Unsafe code | `cargo geiger` | 0 unsafe in own crates | Dependencies may use unsafe |
+| Dependency freshness | `cargo outdated` | ≤ 3 months behind latest | Review monthly |
+| Binary size (release) | `ls -lh target/release/mChatd` | < 10 MB | Log and track per release |
+| Test coverage | `cargo llvm-cov` | ≥ 80 % lines mChatd | Backlog — add to CI |
+
+**KIP (Key Inspection Points):**
+
+| KIP | What to verify | When |
+|---|---|---|
+| KIP-01 Daemon stop | PID file exists; process gone after `make stop`; no zombie | Before every `make deploy` |
+| KIP-02 Identity stability | `mchatd.key` unchanged; npub matches expected | After any key/config change |
+| KIP-03 Relay connectivity | All 3 relays CONNECTED in startup log | After network change |
+| KIP-04 Stale-reply guard | mCLIChat rejects gift wraps older than 120 s | After mCLIChat changes |
+
+---
+
+## 8. Known Issues
 
 | ID | Component | Description | Priority |
 |---|---|---|---|
@@ -259,11 +298,15 @@ See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification 
 
 ---
 
-## 8. Roadmap
+## 9. Roadmap
 
 | Milestone | Items |
 |---|---|
-| v0.0.3 | mCLIChat integration test mode (scripted send/assert) |
+| v0.0.3 | mCLIChat integration tests (Blocks 1–8 automated) ✓ |
+| v0.0.3 | Stale-relay reply guard (120 s timestamp filter in mCLIChat) ✓ |
+| v0.0.3 | PID-file based `make stop` (KIP-01) ✓ |
+| v0.0.3 | Code quality KPIs + KIP definitions ✓ |
+| v0.0.4 | `make quality` target (clippy + warnings + llvm-cov) |
 | v0.1.0 | Auto-reconnect on relay drop (REQ-50–54) |
 | v0.1.0 | Periodic relay health check + rotation |
 | iOS MVP | NostrEssentials integration, NIP-17 1:1 messaging, identity onboarding |
@@ -272,7 +315,7 @@ See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification 
 
 ---
 
-## 9. Revision History
+## 10. Revision History
 
 | Version | Date | Changes |
 |---|---|---|
@@ -280,3 +323,4 @@ See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification 
 | 0.2 | 2026-06-01 | Rust unit tests (29); startup grace period; roles system |
 | 0.3 | 2026-06-01 | Suspend mSwiftChatd; REQ-50–54; remote test plan |
 | 0.4 | 2026-06-02 | Restructure to Cargo workspace; archive Swift targets; rename to mChatd; add shortcuts (REQ-35), `/user delete` (REQ-34), `/user details` (REQ-33), admin notifications (REQ-16), last_seen.txt (REQ-05); 33 unit tests |
+| 0.5 | 2026-06-03 | mCLIChat integration tests Blocks 1–8 automated (two identities); persisted pre_seen + quiet-period EOSE drain; stale-relay reply guard (120 s); PID-file `make stop` (KIP-01); code quality KPIs + KIP table |

@@ -2,15 +2,21 @@
 # mChatd integration test suite
 #
 # Uses mCLIChat --send to exercise mChatd command-by-command and assert replies.
-# A dedicated test identity is auto-created and authorized as admin on first run.
+# Two test identities are used:
+#   ~/.mCLIChat-test  — admin identity  (Blocks 1-8)
+#   ~/.mCLIChat-test2 — user identity   (Blocks 3, 7)
+#
+# Block 7 (new user flow) reuses the user identity: it deletes it from the daemon,
+# then sends from it again so the daemon treats it as a brand-new unknown user.
 #
 # Usage:
 #   ./integration_test.sh
 #
 # Environment overrides:
-#   DAEMON_NPUB   target daemon npub   (default: hardcoded below)
-#   TEST_DIR      test identity dir    (default: ~/.mCLIChat-test)
-#   TIMEOUT       reply timeout secs  (default: 30)
+#   DAEMON_NPUB   target daemon npub    (default: hardcoded below)
+#   TEST_DIR      admin identity dir    (default: ~/.mCLIChat-test)
+#   FRESH_DIR     user identity dir     (default: ~/.mCLIChat-test2)
+#   TIMEOUT       reply timeout secs    (default: 30)
 #
 # Requirements:
 #   mChatd must be running  (make status)
@@ -21,46 +27,37 @@ set -euo pipefail
 DAEMON_NPUB="${DAEMON_NPUB:-npub1xkyup2dgf0zncp9tf88gkl9jy8wpcwtlkluw5saevn34pnza4m7s8m3jpj}"
 MCLICHAT_DATA="${HOME}/.mCLIChat"
 TEST_DIR="${TEST_DIR:-${HOME}/.mCLIChat-test}"
+FRESH_DIR="${FRESH_DIR:-${HOME}/.mCLIChat-test2}"
 CLI="$(cd "$(dirname "$0")/../.."; pwd)/target/debug/mCLIChat"
 TIMEOUT="${TIMEOUT:-30}"
 PASS=0; FAIL=0; SKIP=0
+FRESH_PUBKEY=""; FRESH_ID=""; FRESH_NEW_ID=""
 
-# ── Test identity setup ───────────────────────────────────────────────────────
-#
-# mCLIChat supports MCLICHAT_DIR to isolate identity and contacts per directory.
-# The test suite uses ~/.mCLIChat-test so it never touches the interactive identity.
-# On first run the identity is registered with the daemon and auto-authorized as admin.
+# ── Identity setup ────────────────────────────────────────────────────────────
 
 setup_test_identity() {
     mkdir -p "$TEST_DIR"
-
-    # Derive pubkey (creates identity.key if it doesn't exist yet)
     TEST_PUBKEY=$(MCLICHAT_DIR="$TEST_DIR" "$CLI" --whoami 2>/dev/null)
     if [ -z "$TEST_PUBKEY" ]; then
         echo "ERROR: could not determine test identity pubkey." >&2; exit 1
     fi
-    echo "Test identity: ${TEST_PUBKEY:0:16}…"
+    echo "Test identity (admin): ${TEST_PUBKEY:0:16}…"
 
-    # Register with daemon if not yet known (first-time setup)
     if ! grep -qF "$TEST_PUBKEY" "$MCLICHAT_DATA/whitelist.txt" 2>/dev/null; then
         echo "Registering test identity with daemon (first run)…"
         MCLICHAT_DIR="$TEST_DIR" "$CLI" --send --timeout 20 "$DAEMON_NPUB" "setup" > /dev/null 2>&1 || true
-        sleep 2  # allow daemon to write pending.json
-
+        sleep 2
         echo "Authorizing test identity as admin…"
-        # Add to whitelist
         echo "$TEST_PUBKEY" >> "$MCLICHAT_DATA/whitelist.txt"
-        # Remove from pending
         python3 -c "
-import json, sys, os
+import json, os
 path = os.path.join('$MCLICHAT_DATA', 'pending.json')
 try: p = json.load(open(path))
 except: p = {}
 p.pop('$TEST_PUBKEY', None)
 json.dump(p, open(path, 'w'), indent=2)"
-        # Set admin role
         python3 -c "
-import json, sys, os
+import json, os
 path = os.path.join('$MCLICHAT_DATA', 'roles.json')
 r = json.load(open(path)) if os.path.exists(path) else {}
 r['$TEST_PUBKEY'] = 'admin'
@@ -69,9 +66,36 @@ json.dump(r, open(path, 'w'), indent=2)"
     fi
 }
 
+# Authorize the user identity as 'user' in daemon files — idempotent.
+setup_user_identity() {
+    mkdir -p "$FRESH_DIR"
+    FRESH_PUBKEY=$(MCLICHAT_DIR="$FRESH_DIR" "$CLI" --whoami 2>/dev/null)
+    if [ -z "$FRESH_PUBKEY" ]; then
+        echo "ERROR: could not determine fresh identity pubkey." >&2; exit 1
+    fi
+    echo "Fresh identity (user):  ${FRESH_PUBKEY:0:16}…"
+
+    grep -qF "$FRESH_PUBKEY" "$MCLICHAT_DATA/whitelist.txt" 2>/dev/null || \
+        echo "$FRESH_PUBKEY" >> "$MCLICHAT_DATA/whitelist.txt"
+    python3 -c "
+import json, os
+data = '$MCLICHAT_DATA'
+ppath = os.path.join(data, 'pending.json')
+try: p = json.load(open(ppath))
+except: p = {}
+p.pop('$FRESH_PUBKEY', None)
+json.dump(p, open(ppath, 'w'), indent=2)
+rpath = os.path.join(data, 'roles.json')
+r = json.load(open(rpath)) if os.path.exists(rpath) else {}
+r['$FRESH_PUBKEY'] = 'user'
+json.dump(r, open(rpath, 'w'), indent=2)"
+    echo "Fresh identity ready (role: user)."
+}
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-send() { MCLICHAT_DIR="$TEST_DIR" "$CLI" --send --timeout "$TIMEOUT" "$DAEMON_NPUB" "$@" 2>/dev/null; }
+send()  { MCLICHAT_DIR="$TEST_DIR"  "$CLI" --send --timeout "$TIMEOUT" "$DAEMON_NPUB" "$@" 2>/dev/null; }
+send2() { MCLICHAT_DIR="$FRESH_DIR" "$CLI" --send --timeout "$TIMEOUT" "$DAEMON_NPUB" "$@" 2>/dev/null; }
 
 assert_eq() {
     local id="$1" cmd="$2" expected="$3"
@@ -112,15 +136,43 @@ assert_not_contains() {
     fi
 }
 
+assert_eq2() {
+    local id="$1" cmd="$2" expected="$3"
+    local actual; actual=$(send2 "$cmd")
+    if [ "$actual" = "$expected" ]; then
+        echo "PASS  $id"; PASS=$((PASS+1))
+    else
+        echo "FAIL  $id  (sent as user: $cmd)"
+        echo "      expected: $expected"
+        echo "      got:      $actual"
+        FAIL=$((FAIL+1))
+    fi
+}
+
+assert_contains2() {
+    local id="$1" cmd="$2" pattern="$3"
+    local actual; actual=$(send2 "$cmd")
+    if echo "$actual" | grep -qF "$pattern"; then
+        echo "PASS  $id"; PASS=$((PASS+1))
+    else
+        echo "FAIL  $id  (sent as user: $cmd)"
+        echo "      expected to contain: $pattern"
+        echo "      got:      $actual"
+        FAIL=$((FAIL+1))
+    fi
+}
+
 skip() { echo "SKIP  $1  ($2)"; SKIP=$((SKIP+1)); }
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 echo "mChatd Integration Tests"
 echo "Daemon:     $DAEMON_NPUB"
-echo "Test dir:   $TEST_DIR"
+echo "Admin dir:  $TEST_DIR"
+echo "User dir:   $FRESH_DIR"
 echo ""
 setup_test_identity
+setup_user_identity
 echo ""
 
 echo "=== Block 1: Basic Connectivity ==="
@@ -139,6 +191,18 @@ assert_contains  "T08a" "/help"    "/p(ing)"
 assert_contains  "T08b" "/help"    "Your role: admin"
 
 echo ""
+echo "=== Block 3: Role Enforcement ==="
+assert_eq2       "T09" "/ping"         "pong"
+assert_contains2 "T10" "/help"         "Your role: user"
+assert_contains2 "T11" "/user block 1" "Permission denied"
+assert_contains2 "T12" "/status"       "mChatd v0.0.2"
+
+# Capture the fresh user's current daemon ID for deletion before Block 7.
+# Users with no NIP-05/name are shown as "#<id> (<first16hex>…)" in /user output.
+FRESH_LINE=$(send "/user" | grep "(${FRESH_PUBKEY:0:16}" || true)
+FRESH_ID=$(echo "$FRESH_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+
+echo ""
 echo "=== Block 4: Shortcuts ==="
 assert_eq        "T13" "/p"  "pong"
 assert_contains  "T14" "/s"  "mChatd v0.0.2"
@@ -153,23 +217,54 @@ assert_contains  "T19" "/user details 99"  "No user with id #99"
 
 echo ""
 echo "=== Block 6: Admin Commands ==="
-# Find bot ID dynamically (it may have changed after delete/re-register cycles)
 BOT_LINE=$(send "/user" | grep "bot@botrift.com" || true)
 BOT_ID=$(echo "$BOT_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
 if [ -z "$BOT_ID" ]; then
     skip "T20-T26" "bot@botrift.com not found in /user list — re-run after bot re-registers"
 else
-    assert_contains  "T20" "/user authorize $BOT_ID"  "authorized"
-    assert_contains  "T22" "/user"                    "[auth]"
-    assert_contains  "T23" "/user block $BOT_ID"      "blocked"
-    assert_contains  "T25" "/user"                    "[blocked]"
-    assert_contains  "T26a" "/user auth $BOT_ID"      "authorized"
-    assert_contains  "T26b" "/user bl $BOT_ID"        "blocked"
+    assert_contains  "T20"  "/user authorize $BOT_ID"  "authorized"
+    assert_contains  "T22"  "/user"                    "[auth]"
+    assert_contains  "T23"  "/user block $BOT_ID"      "blocked"
+    assert_contains  "T25"  "/user"                    "[blocked]"
+    assert_contains  "T26a" "/user auth $BOT_ID"       "authorized"
+    assert_contains  "T26b" "/user bl $BOT_ID"         "blocked"
+fi
+
+echo ""
+echo "=== Block 7: New User Flow ==="
+# Deleting the fresh identity and re-contacting the daemon replicates the full
+# new-user flow without needing a separate Nostr account.
+if [ -n "${FRESH_ID:-}" ]; then
+    send "/user del $FRESH_ID" > /dev/null
+
+    assert_contains2 "T27" "hello"       "Hello! This is mChatd v0.0.2"
+    skip             "T28"               "admin NIP-17 notification — manual check required"
+    assert_contains2 "T29" "hello again" "pending authorization"
+
+    # T30: admin sees the fresh user in pending state
+    FRESH_NEW_LINE=$(send "/user" | grep "(${FRESH_PUBKEY:0:16}" || true)
+    FRESH_NEW_ID=$(echo "$FRESH_NEW_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+    if echo "$FRESH_NEW_LINE" | grep -qF "[pending"; then
+        echo "PASS  T30"; PASS=$((PASS+1))
+    else
+        echo "FAIL  T30  (/user does not show fresh user as pending)"
+        echo "      line: $FRESH_NEW_LINE"
+        FAIL=$((FAIL+1))
+    fi
+
+    if [ -n "${FRESH_NEW_ID:-}" ]; then
+        assert_contains "T31" "/user authorize $FRESH_NEW_ID" "authorized"
+        skip            "T32"                                  "approval NIP-17 to new user — manual check required"
+        assert_eq2      "T33" "/ping"                          "pong"
+    else
+        skip "T31-T33" "could not find pending fresh user ID in /user output"
+    fi
+else
+    skip "T27-T33" "fresh identity ID unknown — Block 3 setup may have failed"
 fi
 
 echo ""
 echo "=== Block 8: Delete ==="
-# Re-authorize bot to test delete
 if [ -n "${BOT_ID:-}" ]; then
     send "/user auth $BOT_ID" > /dev/null
     assert_contains     "T34" "/user del $BOT_ID"  "deleted from all lists"
@@ -179,6 +274,12 @@ else
     skip "T34-T35" "bot ID unknown, skipping delete test"
 fi
 assert_contains  "T36" "/user del 99"  "No user with id #99"
+# T37: non-admin cannot delete users (fresh identity is now an authorized user)
+if [ -n "${FRESH_NEW_ID:-}" ]; then
+    assert_contains2 "T37" "/user del 1" "Permission denied"
+else
+    skip "T37" "fresh identity not available (Block 7 skipped)"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
@@ -187,7 +288,7 @@ echo "════════════════════════�
 printf "Results:  %d passed,  %d failed,  %d skipped\n" "$PASS" "$FAIL" "$SKIP"
 echo "════════════════════════════════════════════════"
 echo ""
-echo "Blocks 3, 7, 9, 10 require manual testing — see docs/TEST_PLAN_REMOTE.md"
+echo "Blocks 9, 10 require manual testing — see docs/TEST_PLAN_REMOTE.md"
 echo ""
 
 [ "$FAIL" -eq 0 ]
