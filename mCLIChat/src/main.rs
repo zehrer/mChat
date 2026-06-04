@@ -106,9 +106,18 @@ async fn send_dm(client: &Client, keys: &Keys, recipient: &PublicKey, text: &str
         encrypted,
         [Tag::public_key(*recipient)],
     );
-    match client.send_event_builder(builder).await {
-        Ok(_) => eprintln!("[sent]"),
-        Err(e) => eprintln!("Send failed: {e}"),
+    for attempt in 1u8..=3 {
+        match client.send_event_builder(builder.clone()).await {
+            Ok(_) => { eprintln!("[sent]"); return; }
+            Err(e) => {
+                if attempt < 3 {
+                    eprintln!("Send attempt {attempt} failed ({e}), retrying…");
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                } else {
+                    eprintln!("Send failed after 3 attempts: {e}");
+                }
+            }
+        }
     }
 }
 
@@ -272,7 +281,17 @@ async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--timeout requires a number"))?;
     }
 
-    let target_str = args.next().ok_or_else(|| anyhow::anyhow!("Usage: --send [--timeout N] <npub|pubkey> <message>"))?;
+    // Optional --since <epoch> flag: reject replies whose inner rumor created_at < epoch.
+    // Lets callers filter out responses from a previous session that arrived late.
+    let mut since_epoch: u64 = 0;
+    if args.peek().map(|s| s.as_str()) == Some("--since") {
+        args.next();
+        since_epoch = args.next()
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("--since requires a unix epoch number"))?;
+    }
+
+    let target_str = args.next().ok_or_else(|| anyhow::anyhow!("Usage: --send [--timeout N] [--since EPOCH] <npub|pubkey> <message>"))?;
     let message_parts: Vec<&String> = args.collect();
     if message_parts.is_empty() {
         anyhow::bail!("Usage: --send [--timeout N] <npub|pubkey> <message>");
@@ -380,6 +399,10 @@ async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
                                 eprintln!("(skipping stale gift-wrap reply: rumor ts {}s old)", send_ts.saturating_sub(rumor_ts));
                                 continue;
                             }
+                            if since_epoch > 0 && rumor_ts < since_epoch {
+                                eprintln!("(skipping pre-session gift-wrap reply: rumor ts {}s before --since)", since_epoch.saturating_sub(rumor_ts));
+                                continue;
+                            }
                             save_pre_seen(&pre_seen);
                             println!("{}", unwrapped.rumor.content);
                             return Ok(());
@@ -388,6 +411,10 @@ async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
                 } else if event.kind == Kind::EncryptedDirectMessage && event.pubkey == target {
                     if event.created_at.as_u64() + 120 < send_time.as_u64() {
                         eprintln!("(skipping stale NIP-04 reply: {}s old)", send_time.as_u64().saturating_sub(event.created_at.as_u64()));
+                        continue;
+                    }
+                    if since_epoch > 0 && event.created_at.as_u64() < since_epoch {
+                        eprintln!("(skipping pre-session NIP-04 reply)");
                         continue;
                     }
                     if let Ok(content) = nip04::decrypt(keys.secret_key(), &event.pubkey, &event.content) {

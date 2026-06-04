@@ -41,12 +41,8 @@ build-release:
 # ---------------------------------------------------------------------------
 .PHONY: stop logs status
 stop:
-	@if [ -f $(PID) ]; then \
-		kill $$(cat $(PID)) 2>/dev/null && echo "mChatd stopped (pid $$(cat $(PID)))" || true; \
-		rm -f $(PID); \
-	else \
-		pkill -x mChatd 2>/dev/null && echo "mChatd stopped" || echo "mChatd: not running"; \
-	fi
+	@pkill -x mChatd 2>/dev/null && echo "mChatd stopped" || echo "mChatd: not running"
+	@rm -f $(PID)
 	@pkill -x mRustChatd 2>/dev/null && echo "WARNING: stray mRustChatd stopped" || true
 
 logs:

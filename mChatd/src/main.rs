@@ -552,9 +552,14 @@ async fn main() -> anyhow::Result<()> {
     client.connect().await;
     println!("Connected to {} relays.", DEFAULT_RELAYS.len());
 
+    let mut last_seen_ts = load_last_seen();
+
     let mut notifications = client.notifications();
+    // NIP-04: use `since` so the relay only sends events we haven't processed.
+    // NIP-17 outer timestamps are randomized (NIP-59), so no `since` there.
+    let since_ts = Timestamp::from(last_seen_ts);
     client.subscribe(vec![
-        Filter::new().pubkey(keys.public_key()).kind(Kind::EncryptedDirectMessage),
+        Filter::new().pubkey(keys.public_key()).kind(Kind::EncryptedDirectMessage).since(since_ts),
         Filter::new().pubkey(keys.public_key()).kind(Kind::GiftWrap),
     ], None).await?;
 
@@ -567,7 +572,6 @@ async fn main() -> anyhow::Result<()> {
     let start_time = Instant::now();
     let mut msg_count: u64 = 0;
     let mut seen: HashSet<EventId> = HashSet::new();
-    let mut last_seen_ts = load_last_seen();
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Event { event, .. } = notification else { continue };
@@ -589,8 +593,10 @@ async fn main() -> anyhow::Result<()> {
             _ => continue,
         };
 
-        // Skip relay backlog from previous sessions; advance the high-water mark
-        if msg_ts <= last_seen_ts {
+        // Skip relay backlog from previous sessions; advance the high-water mark.
+        // Strict less-than so two commands created in the same second are both
+        // processed — the `seen` HashSet above deduplicates exact event IDs.
+        if msg_ts < last_seen_ts {
             continue;
         }
         last_seen_ts = msg_ts;
@@ -674,9 +680,18 @@ async fn main() -> anyhow::Result<()> {
 // MARK: - Helpers
 
 async fn send_reply(client: &Client, pubkey: PublicKey, text: &str) {
-    match client.send_private_msg(pubkey, text, None).await {
-        Ok(_) => println!("  → replied (NIP-17)"),
-        Err(e) => println!("  → send failed: {e}"),
+    for attempt in 1u8..=3 {
+        match client.send_private_msg(pubkey, text, None).await {
+            Ok(_) => { println!("  → replied (NIP-17)"); return; }
+            Err(e) => {
+                if attempt < 3 {
+                    println!("  → send attempt {attempt} failed ({e}), retrying…");
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                } else {
+                    println!("  → send failed after 3 attempts: {e}");
+                }
+            }
+        }
     }
 }
 
