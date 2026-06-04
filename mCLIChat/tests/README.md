@@ -76,27 +76,30 @@ MCLICHAT_DIR=~/.mCLIChat-test mCLIChat --whoami
 | 3 — Role Enforcement | T09–T12 | user | permission denied on admin commands |
 | 4 — Shortcuts | T13–T16 | admin | `/p`, `/s`, `/h`, `/u` |
 | 5 — User Details | T17–T19 | admin | `/user det`, not-found |
-| 6 — Admin Commands | T20–T26 | admin | authorize, block, shortcut variants |
-| 7 — New User Flow | T27–T33 | user (deleted+re-registered) | welcome, pending, authorize, ping |
-| 8 — Delete | T34–T37 | admin + user | `/user del`, not-found, permission denied |
+| 6 — Admin State Operations | T20–T23 | admin | block → unblock cycle on user identity |
+| 7 — New User Flow | T24–T30 | user (deleted+re-registered) | welcome, pending, authorize, ping |
+| 8 — Delete & Permissions | T31–T35 | admin + user | permission denied, `/user del`, verify gone, not-found |
 
-**Automated:** Blocks 1–8
+**Automated:** Blocks 1–8 (no external dependencies)
 
 **Skipped within Block 7** (NIP-17 inbox checks — require a Nostr client):
-- T28 — admin receives new-user notification
-- T32 — new user receives approval message
+- T25 — admin receives new-user notification
+- T29 — new user receives approval message
 
 **Manual only** (require server access or a Nostr client):
 - Block 9 — Relay backlog / startup grace period
 - Block 10 — NIP-17 delivery verification in Nostur
 
-### How Block 7 works without a fresh device
+### How Blocks 6–8 share one user identity
 
-Deleting a user from the daemon removes them from all lists. When they next send
-a message the daemon treats them as unknown and runs the full new-user flow.
-The test suite deletes the user identity (`~/.mCLIChat-test2/`) at the start of
-Block 7 and re-contacts the daemon, then verifies welcome → pending → authorize →
-ping without needing a separate Nostr account.
+The user identity (`~/.mCLIChat-test2/`) is used across three blocks:
+
+1. **Block 3** — tests role enforcement (user can't run admin commands)
+2. **Block 6** — admin blocks and unblocks the user (verifies state changes)
+3. **Block 7** — admin deletes the user; user re-contacts and triggers the full
+   new-user flow (welcome → pending → authorize) without a separate Nostr account
+4. **Block 8** — verifies the re-authorized user can't delete others, then deletes
+   the user and confirms removal from the list
 
 See [docs/TEST_PLAN_REMOTE.md](../../docs/TEST_PLAN_REMOTE.md) for the full manual checklist.
 

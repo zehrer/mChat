@@ -247,10 +247,12 @@ Run with `make test`. All 33 tests in `mChatd/src/main.rs` (`#[cfg(test)]`):
 | 3 | T09–T12 | user | Role enforcement (user cannot admin-cmd) |
 | 4 | T13–T16 | admin | Command shortcuts |
 | 5 | T17–T19 | admin | User details / not-found |
-| 6 | T20–T26 | admin | Authorize / block / re-auth (requires bot) |
-| 7 | T27–T33 | user | New-user welcome → pending → authorize flow |
-| 8 | T34–T37 | admin | Delete user; permission guard |
+| 6 | T20–T23 | admin | Block → unblock cycle on user identity |
+| 7 | T24–T30 | user | New-user welcome → pending → authorize flow |
+| 8 | T31–T35 | admin + user | Permission denied, delete user, verify gone, not-found |
 | 9–10 | manual | — | HomeNode remote (Block 9), Nostur app (Block 10) |
+
+**No external dependencies:** all 8 automated blocks use the two controlled test identities. The same user identity (`~/.mCLIChat-test2/`) is exercised across Blocks 3, 6, 7, and 8 — role enforcement, state changes, onboarding, and delete.
 
 **Block 7 technique:** delete the user identity from daemon lists → re-contact → daemon treats it as a brand-new unknown user, exercising the full onboarding flow without a separate Nostr account.
 

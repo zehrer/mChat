@@ -4,10 +4,12 @@
 # Uses mCLIChat --send to exercise mChatd command-by-command and assert replies.
 # Two test identities are used:
 #   ~/.mCLIChat-test  — admin identity  (Blocks 1-8)
-#   ~/.mCLIChat-test2 — user identity   (Blocks 3, 7)
+#   ~/.mCLIChat-test2 — user identity   (Blocks 3, 6, 7, 8)
 #
-# Block 7 (new user flow) reuses the user identity: it deletes it from the daemon,
-# then sends from it again so the daemon treats it as a brand-new unknown user.
+# Block 6 uses the user identity (already authorized) to test admin block/unblock.
+# Block 7 (new user flow) deletes the user identity from the daemon, then re-contacts
+#   so the daemon treats it as a brand-new unknown user — no external account needed.
+# Block 8 uses the re-authorized user identity for delete and permission tests.
 #
 # Usage:
 #   ./integration_test.sh
@@ -197,7 +199,7 @@ assert_contains2 "T10" "/help"         "Your role: user"
 assert_contains2 "T11" "/user block 1" "Permission denied"
 assert_contains2 "T12" "/status"       "mChatd v0.0.2"
 
-# Capture the fresh user's current daemon ID for deletion before Block 7.
+# Capture the fresh user's current daemon ID (needed for Blocks 6 and 7).
 # Users with no NIP-05/name are shown as "#<id> (<first16hex>…)" in /user output.
 FRESH_LINE=$(send "/user" | grep "(${FRESH_PUBKEY:0:16}" || true)
 FRESH_ID=$(echo "$FRESH_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
@@ -216,18 +218,16 @@ assert_contains  "T18" "/user det 1"       "stephan@zehrer.net"
 assert_contains  "T19" "/user details 99"  "No user with id #99"
 
 echo ""
-echo "=== Block 6: Admin Commands ==="
-BOT_LINE=$(send "/user" | grep "bot@botrift.com" || true)
-BOT_ID=$(echo "$BOT_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
-if [ -z "$BOT_ID" ]; then
-    skip "T20-T26" "bot@botrift.com not found in /user list — re-run after bot re-registers"
+echo "=== Block 6: Admin State Operations ==="
+# The fresh user is in [auth] state. Run a block → unblock cycle to verify admin
+# state-change commands. FRESH_ID is left as [auth] so Block 7 can delete it.
+if [ -n "${FRESH_ID:-}" ]; then
+    assert_contains "T20" "/user block $FRESH_ID"    "blocked"
+    assert_contains "T21" "/user"                    "[blocked]"
+    assert_contains "T22" "/user authorize $FRESH_ID" "authorized"
+    assert_contains "T23" "/user"                    "[auth]"
 else
-    assert_contains  "T20"  "/user authorize $BOT_ID"  "authorized"
-    assert_contains  "T22"  "/user"                    "[auth]"
-    assert_contains  "T23"  "/user block $BOT_ID"      "blocked"
-    assert_contains  "T25"  "/user"                    "[blocked]"
-    assert_contains  "T26a" "/user auth $BOT_ID"       "authorized"
-    assert_contains  "T26b" "/user bl $BOT_ID"         "blocked"
+    skip "T20-T23" "fresh identity ID unknown — Block 3 setup may have failed"
 fi
 
 echo ""
@@ -237,49 +237,44 @@ echo "=== Block 7: New User Flow ==="
 if [ -n "${FRESH_ID:-}" ]; then
     send "/user del $FRESH_ID" > /dev/null
 
-    assert_contains2 "T27" "hello"       "Hello! This is mChatd v0.0.2"
-    skip             "T28"               "admin NIP-17 notification — manual check required"
-    assert_contains2 "T29" "hello again" "pending authorization"
+    assert_contains2 "T24" "hello"       "Hello! This is mChatd v0.0.2"
+    skip             "T25"               "admin NIP-17 notification — manual check required"
+    assert_contains2 "T26" "hello again" "pending authorization"
 
-    # T30: admin sees the fresh user in pending state
+    # T27: admin sees the fresh user in pending state
     FRESH_NEW_LINE=$(send "/user" | grep "(${FRESH_PUBKEY:0:16}" || true)
     FRESH_NEW_ID=$(echo "$FRESH_NEW_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
     if echo "$FRESH_NEW_LINE" | grep -qF "[pending"; then
-        echo "PASS  T30"; PASS=$((PASS+1))
+        echo "PASS  T27"; PASS=$((PASS+1))
     else
-        echo "FAIL  T30  (/user does not show fresh user as pending)"
+        echo "FAIL  T27  (/user does not show fresh user as pending)"
         echo "      line: $FRESH_NEW_LINE"
         FAIL=$((FAIL+1))
     fi
 
     if [ -n "${FRESH_NEW_ID:-}" ]; then
-        assert_contains "T31" "/user authorize $FRESH_NEW_ID" "authorized"
-        skip            "T32"                                  "approval NIP-17 to new user — manual check required"
-        assert_eq2      "T33" "/ping"                          "pong"
+        assert_contains "T28" "/user authorize $FRESH_NEW_ID" "authorized"
+        skip            "T29"                                  "approval NIP-17 to new user — manual check required"
+        assert_eq2      "T30" "/ping"                          "pong"
     else
-        skip "T31-T33" "could not find pending fresh user ID in /user output"
+        skip "T28-T30" "could not find pending fresh user ID in /user output"
     fi
 else
-    skip "T27-T33" "fresh identity ID unknown — Block 3 setup may have failed"
+    skip "T24-T30" "fresh identity ID unknown — Block 3 setup may have failed"
 fi
 
 echo ""
-echo "=== Block 8: Delete ==="
-if [ -n "${BOT_ID:-}" ]; then
-    send "/user auth $BOT_ID" > /dev/null
-    assert_contains     "T34" "/user del $BOT_ID"  "deleted from all lists"
-    assert_not_contains "T35" "/user"               "bot@botrift.com"
-    echo "INFO  bot deleted — it will reappear when it next contacts the daemon"
-else
-    skip "T34-T35" "bot ID unknown, skipping delete test"
-fi
-assert_contains  "T36" "/user del 99"  "No user with id #99"
-# T37: non-admin cannot delete users (fresh identity is now an authorized user)
+echo "=== Block 8: Delete & Permissions ==="
+# T31: non-admin cannot delete users (fresh identity is now an authorized user)
 if [ -n "${FRESH_NEW_ID:-}" ]; then
-    assert_contains2 "T37" "/user del 1" "Permission denied"
+    assert_contains2 "T31" "/user del 1"              "Permission denied"
+    assert_contains  "T32" "/user bl $FRESH_NEW_ID"   "blocked"
+    assert_contains  "T33" "/user del $FRESH_NEW_ID"  "deleted from all lists"
+    assert_not_contains "T34" "/user"                 "(${FRESH_PUBKEY:0:16}"
 else
-    skip "T37" "fresh identity not available (Block 7 skipped)"
+    skip "T31-T34" "fresh identity not available (Block 7 skipped)"
 fi
+assert_contains "T35" "/user del 99" "No user with id #99"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
