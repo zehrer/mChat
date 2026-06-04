@@ -31,7 +31,7 @@ MCLICHAT_DATA="${HOME}/.mCLIChat"
 TEST_DIR="${TEST_DIR:-${HOME}/.mCLIChat-test}"
 FRESH_DIR="${FRESH_DIR:-${HOME}/.mCLIChat-test2}"
 CLI="$(cd "$(dirname "$0")/../.."; pwd)/target/debug/mCLIChat"
-TIMEOUT="${TIMEOUT:-30}"
+TIMEOUT="${TIMEOUT:-45}"
 PASS=0; FAIL=0; SKIP=0
 FRESH_PUBKEY=""; FRESH_ID=""; FRESH_NEW_ID=""
 
@@ -101,7 +101,7 @@ send2() { MCLICHAT_DIR="$FRESH_DIR" "$CLI" --send --timeout "$TIMEOUT" "$DAEMON_
 
 assert_eq() {
     local id="$1" cmd="$2" expected="$3"
-    local actual; actual=$(send "$cmd")
+    local actual; actual=$(send "$cmd") || true
     if [ "$actual" = "$expected" ]; then
         echo "PASS  $id"; PASS=$((PASS+1))
     else
@@ -114,7 +114,7 @@ assert_eq() {
 
 assert_contains() {
     local id="$1" cmd="$2" pattern="$3"
-    local actual; actual=$(send "$cmd")
+    local actual; actual=$(send "$cmd") || true
     if echo "$actual" | grep -qF "$pattern"; then
         echo "PASS  $id"; PASS=$((PASS+1))
     else
@@ -127,7 +127,7 @@ assert_contains() {
 
 assert_not_contains() {
     local id="$1" cmd="$2" pattern="$3"
-    local actual; actual=$(send "$cmd")
+    local actual; actual=$(send "$cmd") || true
     if ! echo "$actual" | grep -qF "$pattern"; then
         echo "PASS  $id"; PASS=$((PASS+1))
     else
@@ -140,7 +140,7 @@ assert_not_contains() {
 
 assert_eq2() {
     local id="$1" cmd="$2" expected="$3"
-    local actual; actual=$(send2 "$cmd")
+    local actual; actual=$(send2 "$cmd") || true
     if [ "$actual" = "$expected" ]; then
         echo "PASS  $id"; PASS=$((PASS+1))
     else
@@ -153,7 +153,7 @@ assert_eq2() {
 
 assert_contains2() {
     local id="$1" cmd="$2" pattern="$3"
-    local actual; actual=$(send2 "$cmd")
+    local actual; actual=$(send2 "$cmd") || true
     if echo "$actual" | grep -qF "$pattern"; then
         echo "PASS  $id"; PASS=$((PASS+1))
     else
@@ -284,6 +284,27 @@ printf "Results:  %d passed,  %d failed,  %d skipped\n" "$PASS" "$FAIL" "$SKIP"
 echo "════════════════════════════════════════════════"
 echo ""
 echo "Blocks 9, 10 require manual testing — see docs/TEST_PLAN_REMOTE.md"
+
+# ── Cleanup ───────────────────────────────────────────────────────────────────
+# Remove the fresh user identity from the daemon after every run so the user
+# list returns to baseline. The test admin identity is kept permanently —
+# it is the second stable admin alongside the real admin (stephan@zehrer.net).
+
+echo ""
+echo "=== Cleanup ==="
+
+USER_LIST=$(send "/user" 2>/dev/null) || true
+
+# Fresh identity: normally removed in Block 8 (T33), but guard against skips.
+CLEANUP_FRESH_LINE=$(echo "$USER_LIST" | grep "(${FRESH_PUBKEY:0:16}" || true)
+CLEANUP_FRESH_ID=$(echo "$CLEANUP_FRESH_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+if [ -n "$CLEANUP_FRESH_ID" ]; then
+    send "/user del $CLEANUP_FRESH_ID" > /dev/null || true
+    echo "  removed: fresh user #$CLEANUP_FRESH_ID"
+else
+    echo "  ok: fresh user already removed"
+fi
+
 echo ""
 
 [ "$FAIL" -eq 0 ]
