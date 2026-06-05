@@ -120,9 +120,9 @@ Types: feat | fix | test | docs | refactor | chore
 `~/.mCLIChat/config.toml`:
 ```toml
 [rust]
-name  = "mChatd v0.0.2"
 about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 ```
+The `name` field is always taken from the `VERSION` constant in code — no manual sync needed on version bumps.
 
 `~/.mCLIChat/roles.json` — admin rights (only grantable locally):
 ```json
