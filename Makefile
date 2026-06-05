@@ -27,6 +27,17 @@ test-integration:
 	mCLIChat/tests/integration_test.sh
 
 # ---------------------------------------------------------------------------
+# quality: zero-warning gate (clippy + compiler)
+# ---------------------------------------------------------------------------
+.PHONY: quality
+quality:
+	@echo "Running clippy…"
+	cargo clippy --workspace -- --deny warnings
+	@echo "Building with -D warnings…"
+	RUSTFLAGS="-D warnings" cargo build --workspace
+	@echo "Quality checks passed."
+
+# ---------------------------------------------------------------------------
 # build
 # ---------------------------------------------------------------------------
 .PHONY: build build-release

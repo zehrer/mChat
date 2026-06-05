@@ -211,39 +211,44 @@ assert_eq        "T03" "/echo test message" "test message"
 assert_eq        "T04" "/echo"              "(empty)"
 assert_contains  "T05" "/unknown"           "Unknown command: /unknown"
 
+sleep 3
 echo ""
 echo "=== Block 2: Status & Help ==="
-assert_contains  "T06a" "/status"  "mChatd v0.0.2"
+assert_contains  "T06a" "/status"  "mChatd v0.0.3"
 assert_contains  "T06b" "/status"  "Relays"
 assert_contains  "T07"  "/user"    "[auth]"
 assert_contains  "T08a" "/help"    "/p(ing)"
 assert_contains  "T08b" "/help"    "Your role: admin"
 
+sleep 3
 echo ""
 echo "=== Block 3: Role Enforcement ==="
 assert_eq2       "T09" "/ping"         "pong"
 assert_contains2 "T10" "/help"         "Your role: user"
 assert_contains2 "T11" "/user block 1" "Permission denied"
-assert_contains2 "T12" "/status"       "mChatd v0.0.2"
+assert_contains2 "T12" "/status"       "mChatd v0.0.3"
 
 # Capture the fresh user's current daemon ID (needed for Blocks 6 and 7).
 # Users with no NIP-05/name are shown as "#<id> (<first16hex>…)" in /user output.
 FRESH_LINE=$(send "/user" | grep "(${FRESH_PUBKEY:0:16}" || true)
 FRESH_ID=$(echo "$FRESH_LINE" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
 
+sleep 3
 echo ""
 echo "=== Block 4: Shortcuts ==="
 assert_eq        "T13" "/p"  "pong"
-assert_contains  "T14" "/s"  "mChatd v0.0.2"
+assert_contains  "T14" "/s"  "mChatd v0.0.3"
 assert_contains  "T15" "/h"  "/p(ing)"
 assert_contains  "T16" "/u"  "[auth]"
 
+sleep 3
 echo ""
 echo "=== Block 5: User Details ==="
 assert_contains  "T17" "/user details 1"   "stephan@zehrer.net"
 assert_contains  "T18" "/user det 1"       "stephan@zehrer.net"
 assert_contains  "T19" "/user details 99"  "No user with id #99"
 
+sleep 3
 echo ""
 echo "=== Block 6: Admin State Operations ==="
 # The fresh user is in [auth] state. Run a block → unblock cycle to verify admin
@@ -257,6 +262,7 @@ else
     skip "T20-T23" "fresh identity ID unknown — Block 3 setup may have failed"
 fi
 
+sleep 3
 echo ""
 echo "=== Block 7: New User Flow ==="
 # Deleting the fresh identity and re-contacting the daemon replicates the full
@@ -264,7 +270,7 @@ echo "=== Block 7: New User Flow ==="
 if [ -n "${FRESH_ID:-}" ]; then
     send "/user del $FRESH_ID" > /dev/null
 
-    assert_contains2 "T24" "hello"       "Hello! This is mChatd v0.0.2"
+    assert_contains2 "T24" "hello"       "Hello! This is mChatd v0.0.3"
     skip             "T25"               "admin NIP-17 notification — manual check required"
     assert_contains2 "T26" "hello again" "pending authorization"
 
@@ -290,6 +296,7 @@ else
     skip "T24-T30" "fresh identity ID unknown — Block 3 setup may have failed"
 fi
 
+sleep 3
 echo ""
 echo "=== Block 8: Delete & Permissions ==="
 # T31: non-admin cannot delete users (fresh identity is now an authorized user)

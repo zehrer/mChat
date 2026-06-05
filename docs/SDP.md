@@ -83,9 +83,10 @@ Types: feat | fix | test | docs | refactor | chore
 1. git checkout -b feature/<name>
 2. <edit code>
 3. make test            # 33 unit tests — must all pass
-4. make deploy          # rebuild release + restart daemon
-5. <verify — see §6>
-6. git commit && git push
+4. make quality         # zero-warning gate (clippy + compiler)
+5. make deploy          # rebuild release + restart daemon
+6. <verify — see §6>
+7. git commit && git push
 ```
 
 ---
@@ -106,6 +107,8 @@ Types: feat | fix | test | docs | refactor | chore
 | `make deploy` | Release build + stop + restart mChatd |
 | `make test` | `cargo test -p mChatd` (33 unit tests) |
 | `make test-verbose` | Tests with stdout output |
+| `make test-integration` | End-to-end integration tests (Blocks 1–8) |
+| `make quality` | `cargo clippy --deny warnings` + `RUSTFLAGS=-D warnings cargo build` |
 | `make build` | Debug build |
 | `make build-release` | Release build (no restart) |
 | `make stop` | Kill running mChatd |
@@ -320,7 +323,8 @@ Tracked per release. Run locally with `make quality` *(target TBD)*.
 | v0.0.3 | Stale-relay reply guard (120 s timestamp filter in mCLIChat) ✓ |
 | v0.0.3 | PID-file based `make stop` (KIP-01) ✓ |
 | v0.0.3 | Code quality KPIs + KIP definitions ✓ |
-| v0.0.4 | `make quality` target (clippy + warnings + llvm-cov) |
+| v0.0.3 | Version bump v0.0.2 → v0.0.3; `make quality` target; BUG-05 inter-block sleep mitigation ✓ |
+| v0.0.4 | `make quality` extended: llvm-cov coverage gate |
 | v0.1.0 | Auto-reconnect on relay drop (REQ-50–54) |
 | v0.1.0 | Periodic relay health check + rotation |
 | iOS MVP | NostrEssentials integration, NIP-17 1:1 messaging, identity onboarding |
@@ -339,3 +343,4 @@ Tracked per release. Run locally with `make quality` *(target TBD)*.
 | 0.4 | 2026-06-02 | Restructure to Cargo workspace; archive Swift targets; rename to mChatd; add shortcuts (REQ-35), `/user delete` (REQ-34), `/user details` (REQ-33), admin notifications (REQ-16), last_seen.txt (REQ-05); 33 unit tests |
 | 0.5 | 2026-06-03 | mCLIChat integration tests Blocks 1–8 automated (two identities); persisted pre_seen + quiet-period EOSE drain; stale-relay reply guard (120 s); PID-file `make stop` (KIP-01); code quality KPIs + KIP table |
 | 0.6 | 2026-06-05 | Document BUG-05 (relay rate-limiting); add CLAUDE.md agent instructions; clarify integration test expected results (35/35 after quiet period, 33/35 during warm-up) |
+| 0.7 | 2026-06-05 | v0.0.3: version bump; `make quality` target; inter-block sleep BUG-05 mitigation; `make quality` added to dev cycle; roadmap updated |
