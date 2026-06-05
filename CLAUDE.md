@@ -80,6 +80,8 @@ Private key lives in `~/.mCLIChat/mchatd.key`. Never commit or log the private k
 
 All runtime state is in `~/.mCLIChat/`. Do not commit these files. Key files:
 
+The daemon profile name is always taken from the `VERSION` constant in code — `config.toml` only needs an `about` field.
+
 | File | Purpose |
 |---|---|
 | `whitelist.txt` | Hex pubkeys with full access |

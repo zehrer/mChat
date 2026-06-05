@@ -1,7 +1,7 @@
 use nostr_sdk::prelude::*;
 use std::{collections::{HashMap, HashSet}, fs, path::PathBuf, time::{Duration, Instant}};
 
-const VERSION: &str = "mChatd v0.0.2";
+const VERSION: &str = "mChatd v0.0.3";
 const SPAM_THRESHOLD: u32 = 5;
 // Placeholder until LLM integration; replace this constant to swap the response.
 const FREE_TEXT_REPLY: &str = "I can only respond to commands for now. Send /help for the list.";
@@ -50,19 +50,14 @@ fn save_last_seen(ts: u64) {
 struct Config { rust: Option<ProfileConfig> }
 
 #[derive(serde::Deserialize)]
-struct ProfileConfig { name: Option<String>, about: Option<String> }
+struct ProfileConfig { about: Option<String> }
 
 fn load_profile() -> (String, String) {
-    let defaults = (
-        VERSION.to_string(),
-        "Rust Agent Daemon https://github.com/zehrer/mChat".to_string(),
-    );
-    let content = match fs::read_to_string(config_path()) { Ok(c) => c, Err(_) => return defaults };
-    let config: Config = match toml::from_str(&content) { Ok(c) => c, Err(_) => return defaults };
-    match config.rust {
-        Some(p) => (p.name.unwrap_or(defaults.0), p.about.unwrap_or(defaults.1)),
-        None => defaults,
-    }
+    let default_about = "Rust Agent Daemon https://github.com/zehrer/mChat".to_string();
+    let content = match fs::read_to_string(config_path()) { Ok(c) => c, Err(_) => return (VERSION.to_string(), default_about) };
+    let config: Config = match toml::from_str(&content) { Ok(c) => c, Err(_) => return (VERSION.to_string(), default_about) };
+    let about = config.rust.and_then(|p| p.about).unwrap_or(default_about);
+    (VERSION.to_string(), about)
 }
 
 // MARK: - Keys

@@ -219,7 +219,7 @@ fn print_msg(display: &str, ts: Timestamp, content: &str, live: bool) {
     if live {
         print!("\r[{time}] {display}: {content}\n> ");
     } else {
-        print!("[{time}] {display}: {content}\n");
+        println!("[{time}] {display}: {content}");
     }
     stdio::stdout().flush().ok();
 }
@@ -335,11 +335,9 @@ async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
             Ok(Ok(RelayPoolNotification::Event { event, .. })) => {
                 pre_seen.insert(event.id);
             }
-            Ok(Ok(RelayPoolNotification::Message { message: msg, .. })) => {
-                if let RelayMessage::EndOfStoredEvents(_) = msg {
-                    eose_count += 1;
-                    if eose_count >= relay_count { break; }
-                }
+            Ok(Ok(RelayPoolNotification::Message { message: RelayMessage::EndOfStoredEvents(_), .. })) => {
+                eose_count += 1;
+                if eose_count >= relay_count { break; }
             }
             Ok(Err(_)) | Err(_) => break,
             _ => {}
@@ -357,12 +355,9 @@ async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
         let cap_remaining = drain_cap.saturating_duration_since(Instant::now());
         let wait = quiet_remaining.min(cap_remaining);
         if wait.is_zero() { break; }
-        match timeout(wait, notifications.recv()).await {
-            Ok(Ok(RelayPoolNotification::Event { event, .. })) => {
-                pre_seen.insert(event.id);
-                last_activity = Instant::now();
-            }
-            _ => {}
+        if let Ok(Ok(RelayPoolNotification::Event { event, .. })) = timeout(wait, notifications.recv()).await {
+            pre_seen.insert(event.id);
+            last_activity = Instant::now();
         }
     }
 
@@ -520,13 +515,11 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
-                RelayPoolNotification::Message { message, .. } => {
-                    if let RelayMessage::EndOfStoredEvents(_) = message {
-                        if !history_done {
-                            history_done = true;
-                            println!("─── live ───");
-                            prompt();
-                        }
+                RelayPoolNotification::Message { message: RelayMessage::EndOfStoredEvents(_), .. } => {
+                    if !history_done {
+                        history_done = true;
+                        println!("─── live ───");
+                        prompt();
                     }
                 }
                 _ => {}
