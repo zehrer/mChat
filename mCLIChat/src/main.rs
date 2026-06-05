@@ -2,7 +2,7 @@ mod contacts;
 
 use nostr_sdk::prelude::*;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::{self as stdio, Write},
     path::PathBuf,
@@ -12,6 +12,7 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::RwLock,
+    time::{timeout, Instant},
 };
 
 type NameCache = Arc<RwLock<HashMap<String, String>>>;
@@ -33,11 +34,30 @@ const STATUS_TTL: u64 = 600; // 10 min
 
 // MARK: - Identity
 
-fn identity_path() -> PathBuf {
-    let home = std::env::var("HOME")
+fn mclichat_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("MCLICHAT_DIR") {
+        return PathBuf::from(dir);
+    }
+    std::env::var("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    home.join(".mCLIChat").join("identity.key")
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".mCLIChat")
+}
+
+fn identity_path() -> PathBuf { mclichat_dir().join("identity.key") }
+fn pre_seen_path() -> PathBuf  { mclichat_dir().join("pre_seen.txt") }
+
+fn load_pre_seen() -> HashSet<EventId> {
+    fs::read_to_string(pre_seen_path()).unwrap_or_default()
+        .lines()
+        .filter_map(|l| EventId::from_hex(l.trim()).ok())
+        .collect()
+}
+
+fn save_pre_seen(seen: &HashSet<EventId>) {
+    const MAX: usize = 20_000;
+    let data: String = seen.iter().take(MAX).map(|id| id.to_hex()).collect::<Vec<_>>().join("\n");
+    let _ = fs::write(pre_seen_path(), data);
 }
 
 fn load_or_create_keys() -> anyhow::Result<Keys> {
@@ -53,7 +73,7 @@ fn load_or_create_keys() -> anyhow::Result<Keys> {
         fs::create_dir_all(parent)?;
     }
     fs::write(&path, keys.secret_key().to_secret_hex())?;
-    println!("New identity generated — saved to {}", path.display());
+    eprintln!("New identity generated — saved to {}", path.display());
     Ok(keys)
 }
 
@@ -86,9 +106,18 @@ async fn send_dm(client: &Client, keys: &Keys, recipient: &PublicKey, text: &str
         encrypted,
         [Tag::public_key(*recipient)],
     );
-    match client.send_event_builder(builder).await {
-        Ok(_) => println!("[sent]"),
-        Err(e) => println!("Send failed: {e}"),
+    for attempt in 1u8..=3 {
+        match client.send_event_builder(builder.clone()).await {
+            Ok(_) => { eprintln!("[sent]"); return; }
+            Err(e) => {
+                if attempt < 3 {
+                    eprintln!("Send attempt {attempt} failed ({e}), retrying…");
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                } else {
+                    eprintln!("Send failed after 3 attempts: {e}");
+                }
+            }
+        }
     }
 }
 
@@ -235,10 +264,189 @@ fn prompt() {
     stdio::stdout().flush().ok();
 }
 
+// MARK: - Send mode (non-interactive, for scripting / integration tests)
+
+// Usage: mCLIChat --send [--timeout <secs>] <npub|pubkey> <message...>
+// Sends one message, waits for a reply, prints it to stdout, exits.
+// All status output goes to stderr so stdout carries only the reply.
+async fn run_send_mode(args: &[String]) -> anyhow::Result<()> {
+    let mut args = args.iter().peekable();
+
+    // Optional --timeout flag
+    let mut reply_timeout_secs: u64 = 30;
+    if args.peek().map(|s| s.as_str()) == Some("--timeout") {
+        args.next();
+        reply_timeout_secs = args.next()
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("--timeout requires a number"))?;
+    }
+
+    // Optional --since <epoch> flag: reject replies whose inner rumor created_at < epoch.
+    // Lets callers filter out responses from a previous session that arrived late.
+    let mut since_epoch: u64 = 0;
+    if args.peek().map(|s| s.as_str()) == Some("--since") {
+        args.next();
+        since_epoch = args.next()
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("--since requires a unix epoch number"))?;
+    }
+
+    let target_str = args.next().ok_or_else(|| anyhow::anyhow!("Usage: --send [--timeout N] [--since EPOCH] <npub|pubkey> <message>"))?;
+    let message_parts: Vec<&String> = args.collect();
+    if message_parts.is_empty() {
+        anyhow::bail!("Usage: --send [--timeout N] <npub|pubkey> <message>");
+    }
+    let message = message_parts.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+
+    let target = PublicKey::parse(target_str)
+        .map_err(|e| anyhow::anyhow!("Invalid target pubkey '{}': {}", target_str, e))?;
+
+    let keys = load_or_create_keys()?;
+    let client = Client::new(keys.clone());
+    for relay in DEFAULT_RELAYS { client.add_relay(*relay).await?; }
+
+    eprintln!("Connecting to relays…");
+    client.connect().await;
+
+    // Grab notifications before subscribing to avoid missing events.
+    let mut notifications = client.notifications();
+
+    // Subscribe for DMs addressed to us — no time filter, we rely on EOSE.
+    client.subscribe(vec![
+        Filter::new().pubkey(keys.public_key()).kind(Kind::GiftWrap),
+        Filter::new().pubkey(keys.public_key()).kind(Kind::EncryptedDirectMessage),
+    ], None).await?;
+
+    // Wait for EOSE from all connected relays (up to 8s total) and collect
+    // every event into pre_seen. We wait for all relays to EOSE so every
+    // stored event from every relay is captured before we send.
+    let relay_count = client.relays().await.len().max(1);
+    // Seed pre_seen from disk so events seen in previous runs are also skipped.
+    let mut pre_seen: HashSet<EventId> = load_pre_seen();
+    let eose_deadline = Instant::now() + Duration::from_secs(8);
+    let mut eose_count = 0;
+    loop {
+        let remaining = eose_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            eprintln!("(EOSE timeout: {eose_count}/{relay_count} relays responded — sending anyway)");
+            break;
+        }
+        match timeout(remaining, notifications.recv()).await {
+            Ok(Ok(RelayPoolNotification::Event { event, .. })) => {
+                pre_seen.insert(event.id);
+            }
+            Ok(Ok(RelayPoolNotification::Message { message: msg, .. })) => {
+                if let RelayMessage::EndOfStoredEvents(_) = msg {
+                    eose_count += 1;
+                    if eose_count >= relay_count { break; }
+                }
+            }
+            Ok(Err(_)) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    // Quiet-period drain: keep reading until 500 ms of silence or 5 s cap.
+    // Slow relays may deliver stored events slightly after their EOSE; this
+    // ensures all of them land in pre_seen before we send the command.
+    let drain_cap = Instant::now() + Duration::from_secs(5);
+    let mut last_activity = Instant::now();
+    loop {
+        let quiet_remaining = Duration::from_millis(500)
+            .saturating_sub(last_activity.elapsed());
+        let cap_remaining = drain_cap.saturating_duration_since(Instant::now());
+        let wait = quiet_remaining.min(cap_remaining);
+        if wait.is_zero() { break; }
+        match timeout(wait, notifications.recv()).await {
+            Ok(Ok(RelayPoolNotification::Event { event, .. })) => {
+                pre_seen.insert(event.id);
+                last_activity = Instant::now();
+            }
+            _ => {}
+        }
+    }
+
+    // Send the message (NIP-04; daemon accepts both NIP-04 and NIP-17).
+    eprintln!("Sending: {message}");
+    let send_time = Timestamp::now();
+    send_dm(&client, &keys, &target, &message).await;
+    eprintln!("Waiting for reply ({reply_timeout_secs}s timeout)…");
+
+    // Wait for the first reply from the target. Every event received here is
+    // added to pre_seen so future --send invocations skip it automatically.
+    //
+    // Stale-reply guard: the daemon reuses its identity key across restarts, so
+    // old relay-stored replies from a previous binary (same pubkey, stale content)
+    // could pass the sender check. Reject any reply whose inner rumor created_at
+    // is more than 120 s before we sent — clock-skew safe but rejects day-old events.
+    let reply_deadline = Instant::now() + Duration::from_secs(reply_timeout_secs);
+    loop {
+        let remaining = reply_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            save_pre_seen(&pre_seen);
+            eprintln!("Timeout: no reply received within {reply_timeout_secs}s.");
+            std::process::exit(1);
+        }
+        match timeout(remaining, notifications.recv()).await {
+            Ok(Ok(RelayPoolNotification::Event { event, .. })) => {
+                if !pre_seen.insert(event.id) { continue; }  // skip if already seen
+                if event.kind == Kind::GiftWrap {
+                    if let Ok(unwrapped) = client.unwrap_gift_wrap(&event).await {
+                        if unwrapped.sender == target {
+                            let rumor_ts = unwrapped.rumor.created_at.as_u64();
+                            let send_ts  = send_time.as_u64();
+                            if rumor_ts + 120 < send_ts {
+                                eprintln!("(skipping stale gift-wrap reply: rumor ts {}s old)", send_ts.saturating_sub(rumor_ts));
+                                continue;
+                            }
+                            if since_epoch > 0 && rumor_ts < since_epoch {
+                                eprintln!("(skipping pre-session gift-wrap reply: rumor ts {}s before --since)", since_epoch.saturating_sub(rumor_ts));
+                                continue;
+                            }
+                            save_pre_seen(&pre_seen);
+                            println!("{}", unwrapped.rumor.content);
+                            return Ok(());
+                        }
+                    }
+                } else if event.kind == Kind::EncryptedDirectMessage && event.pubkey == target {
+                    if event.created_at.as_u64() + 120 < send_time.as_u64() {
+                        eprintln!("(skipping stale NIP-04 reply: {}s old)", send_time.as_u64().saturating_sub(event.created_at.as_u64()));
+                        continue;
+                    }
+                    if since_epoch > 0 && event.created_at.as_u64() < since_epoch {
+                        eprintln!("(skipping pre-session NIP-04 reply)");
+                        continue;
+                    }
+                    if let Ok(content) = nip04::decrypt(keys.secret_key(), &event.pubkey, &event.content) {
+                        save_pre_seen(&pre_seen);
+                        println!("{content}");
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(Err(_)) | Err(_) => continue,
+            _ => {}
+        }
+    }
+}
+
 // MARK: - Main
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli_args: Vec<String> = std::env::args().skip(1).collect();
+    match cli_args.first().map(|s| s.as_str()) {
+        // --whoami: print pubkey hex to stdout and exit (used by test scripts)
+        Some("--whoami") => {
+            let keys = load_or_create_keys()?;
+            println!("{}", keys.public_key().to_hex());
+            return Ok(());
+        }
+        // --send: non-interactive send mode for scripting / integration tests
+        Some("--send") => return run_send_mode(&cli_args[1..]).await,
+        _ => {}
+    }
+
     let keys = load_or_create_keys()?;
     println!("Your pubkey : {}", keys.public_key().to_hex());
     if let Ok(npub) = keys.public_key().to_bech32() {

@@ -1,64 +1,53 @@
-SWIFT        := $(HOME)/.local/share/swiftly/bin/swift
-SWIFT_BIN    := .build/x86_64-unknown-linux-gnu
-RUST_BIN     := rust-cli-chat/target
-RUST_LOG     := /tmp/mchatd_out.log
-
-# mSwiftChatd is suspended — development focus is on mRustChatd.
-# Swift targets kept for reference but excluded from deploy/test/run.
+BIN      := target/release/mChatd
+LOG      := /tmp/mchatd_out.log
+PID      := /tmp/mchatd.pid
 
 # ---------------------------------------------------------------------------
-# deploy: release build + restart (primary development loop)
+# deploy: release build + restart
 # ---------------------------------------------------------------------------
 .PHONY: deploy
-deploy: build-rust-release stop
-	nohup $(RUST_BIN)/release/mRustChatd >> $(RUST_LOG) 2>&1 &
-	@echo "mRustChatd restarted. Log: $(RUST_LOG)"
+deploy: build-release stop
+	nohup $(BIN) >> $(LOG) 2>&1 & echo $$! > $(PID)
+	@echo "mChatd restarted (pid $$(cat $(PID))). Log: $(LOG)"
 
 # ---------------------------------------------------------------------------
-# test: unit tests
+# test
 # ---------------------------------------------------------------------------
-.PHONY: test test-rust test-rust-verbose
-test: test-rust
+.PHONY: test test-verbose test-integration
+test:
+	cargo test -p mChatd
 
-test-rust:
-	cd rust-cli-chat && cargo test --bin mRustChatd
+test-verbose:
+	cargo test -p mChatd -- --nocapture
 
-test-rust-verbose:
-	cd rust-cli-chat && cargo test --bin mRustChatd -- --nocapture
-
-# ---------------------------------------------------------------------------
-# Build
-# ---------------------------------------------------------------------------
-.PHONY: build build-rust build-rust-release
-build: build-rust
-
-build-rust:
-	cd rust-cli-chat && cargo build --bin mRustChatd
-
-build-rust-release:
-	cd rust-cli-chat && cargo build --bin mRustChatd --release
+test-integration:
+	@echo "Building mCLIChat…"
+	@cargo build -p mCLIChat 2>&1 | tail -1
+	@echo "Running integration tests against live mChatd…"
+	mCLIChat/tests/integration_test.sh
 
 # ---------------------------------------------------------------------------
-# Stop / logs / status
+# build
+# ---------------------------------------------------------------------------
+.PHONY: build build-release
+build:
+	cargo build -p mChatd
+
+build-release:
+	cargo build -p mChatd --release
+
+# ---------------------------------------------------------------------------
+# stop / logs / status
 # ---------------------------------------------------------------------------
 .PHONY: stop logs status
 stop:
-	@pkill -f mRustChatd 2>/dev/null && echo "mRustChatd stopped" || true
+	@pkill -x mChatd 2>/dev/null && echo "mChatd stopped" || echo "mChatd: not running"
+	@rm -f $(PID)
+	@pkill -x mRustChatd 2>/dev/null && echo "WARNING: stray mRustChatd stopped" || true
 
 logs:
-	@tail -f $(RUST_LOG)
+	@tail -f $(LOG)
 
 status:
-	@pgrep -a mRustChatd 2>/dev/null || echo "mRustChatd: not running"
-
-# ---------------------------------------------------------------------------
-# Swift (suspended — not built or run by default targets)
-# ---------------------------------------------------------------------------
-build-swift:
-	$(SWIFT) build --product mSwiftChatd
-
-build-swift-release:
-	$(SWIFT) build --product mSwiftChatd -c release
-
-test-swift:
-	$(SWIFT) test
+	@pgrep -a mChatd 2>/dev/null || echo "mChatd: not running"
+	@if pgrep -x mRustChatd > /dev/null 2>&1; then echo "WARNING: stray mRustChatd is running — run 'make stop' to kill it"; fi

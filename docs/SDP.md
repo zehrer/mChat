@@ -1,45 +1,47 @@
-# Software Development Plan — mChat Daemon Suite
+# Software Development Plan — mChat
 
-**Version:** 0.2  
-**Status:** Active  
+**Version:** 0.5
+**Status:** Active
 
 ---
 
 ## 1. Project Overview
 
-mChat is a Nostr-based messaging system consisting of a shared Swift library (**mChatCore**) and two reference daemon implementations — one in Swift (**mSwiftChatd**) and one in Rust (**mRustChatd**). The daemons act as always-on agents: they receive encrypted DMs, apply access control, respond to commands, and can be extended to run automated tasks.
+mChat is a Nostr-based messaging system with two active components:
 
-**Scope of this document:** the two CLI daemons and the mChatCore library.  
-**Out of scope:** the iOS/macOS mChat app UI, APNs integration, media handling.
+- **mChatd** (Rust) — always-on daemon; receives encrypted DMs, applies access control, responds to commands. Target: HomeNode integration.
+- **mChat** (iOS, SwiftUI) — native iOS chat app using NostrEssentials as the Nostr protocol layer.
+- **mCLIChat** (Rust) — interactive CLI client and integration test tool for mChatd.
+
+The Swift daemon (mSwiftChatd) and the custom Swift Nostr library (mChatCore) are archived in `Archive/`. NostrEssentials (`nostur-com/NostrEssentials`) replaces mChatCore for the iOS app.
 
 ---
 
 ## 2. System Architecture
 
 ```
+mChat/
+├── Cargo.toml              # Rust workspace [mChatd, mCLIChat]
+├── mChatd/                 # Rust daemon
+│   └── src/main.rs
+├── mCLIChat/               # Rust CLI client / integration test tool
+│   └── src/{main,contacts}.rs
+├── mChat/                  # iOS app (Xcode project, uses NostrEssentials)
+└── Archive/                # mSwiftChatd, mSwiftCLIChat, mChatCore (reference only)
+```
+
+**Runtime data** (`~/.mCLIChat/`):
+
+```
 ~/.mCLIChat/
-├── whitelist.txt       # hex pubkeys allowed full access (one per line)
+├── mchatd.key          # mChatd private key (hex)
+├── whitelist.txt       # hex pubkeys with full access
 ├── blocked.txt         # hex pubkeys permanently ignored
 ├── pending.json        # {"pubkey": count} — awaiting authorization
-├── roles.json          # {"pubkey": "admin"|"user"} — role overrides
-├── users.json          # {"pubkey": {id, nip05, name}} — display names
-├── config.toml         # [swift] / [rust] name and about strings
-├── swift_echo.key      # mSwiftChatd private key (hex)
-└── mchatd.key          # mRustChatd private key (hex)
-
-Sources/
-├── mChatCore/          # Swift library: Nostr protocol, crypto, models
-│   ├── Nostr/          # NostrClient, NostrRelay, NostrEvent, NostrKeyPair
-│   ├── Backend/        # NostrBackend (MessagingBackend implementation)
-│   ├── Crypto/         # NIP-04 (AES-CBC), NIP-44 (ChaCha20+HMAC)
-│   └── Models/         # ChatMessage, Contact, Conversation
-├── mSwiftChatd/        # Swift daemon (uses mChatCore)
-│   └── main.swift      # EchoDaemon, UserRegistry, RoleStore, AccessControl
-└── mCLIChat/           # Interactive Swift CLI (uses mChatCore)
-
-rust-cli-chat/
-└── src/bin/
-    └── mRustChatd.rs   # Rust daemon (standalone, mirrors mSwiftChatd behaviour)
+├── roles.json          # {"pubkey": "admin"|"user"}
+├── users.json          # {"pubkey": {id, nip05, name}}
+├── last_seen.txt       # high-water timestamp (prevents relay backlog replays)
+└── config.toml         # daemon profile name/about
 ```
 
 **Protocol stack:**
@@ -60,37 +62,30 @@ rust-cli-chat/
 ### 3.1 Branching Strategy
 
 ```
-main              ← stable, tagged releases only (no direct commits)
-  └── develop     ← integration branch (currently: feature/mCLIChat)
-        └── feature/<name>   ← one branch per feature or bug fix
-        └── fix/<name>       ← bug fix branches
+main                    ← stable, tagged releases only
+  └── feature/mChatd   ← current integration branch
+        └── feature/<name>
+        └── fix/<name>
 ```
 
-**Rules:**
-- Never commit directly to `main`
-- Feature branches are created off `develop` and merged back via PR/merge
-- `main` is updated only by merging `develop` after verification
-- All commits should be self-contained and buildable
+**Rules:** never commit directly to `main`; merge via PR after verification.
 
 ### 3.2 Commit Conventions
 
 ```
 <type>: <short description>
-
 Types: feat | fix | test | docs | refactor | chore
 ```
-
-Examples: `feat: add /authorize command`, `fix: startup grace period for relay backlog`
 
 ### 3.3 Development Cycle
 
 ```
-1. git checkout -b feature/<name>     # create feature branch
+1. git checkout -b feature/<name>
 2. <edit code>
-3. make test                          # run unit tests — must pass
-4. make deploy                        # rebuild release + restart daemons
-5. <manual verification — see §6>
-6. git commit && git checkout develop && git merge feature/<name>
+3. make test            # 33 unit tests — must all pass
+4. make deploy          # rebuild release + restart daemon
+5. <verify — see §6>
+6. git commit && git push
 ```
 
 ---
@@ -101,47 +96,34 @@ Examples: `feat: add /authorize command`, `fix: startup grace period for relay b
 
 | Tool | Install |
 |---|---|
-| Swift 6.x | `~/.local/share/swiftly/bin/swift` (via swiftly) |
 | Rust 1.x + Cargo | `rustup` |
 | GNU Make 4.x | system package |
 
-### 4.2 Makefile Target Reference
+### 4.2 Makefile Targets
 
 | Target | Description |
 |---|---|
-| `make deploy` | **Primary dev loop** — build both release binaries, stop daemons, restart |
-| `make test` | Run all unit tests (Swift + Rust) |
-| `make test-swift` | Swift unit tests only (`swift test`) |
-| `make test-rust` | Rust unit tests only (`cargo test --bin mRustChatd`) |
-| `make test-rust-verbose` | Rust tests with stdout output |
-| `make build` | Debug build only (no restart) |
-| `make build-release` | Release build only (no restart) |
-| `make run-rust-release` | Build Rust release + restart Rust daemon |
-| `make run-swift-release` | Build Swift release + restart Swift daemon |
-| `make stop` | Kill both running daemons |
-| `make status` | Show which daemons are running |
-| `make logs` | `tail -f` both log files |
-| `make logs-rust` | `tail -f /tmp/mchatd_out.log` |
-| `make logs-swift` | `tail -f /tmp/swiftd_out.log` |
+| `make deploy` | Release build + stop + restart mChatd |
+| `make test` | `cargo test -p mChatd` (33 unit tests) |
+| `make test-verbose` | Tests with stdout output |
+| `make build` | Debug build |
+| `make build-release` | Release build (no restart) |
+| `make stop` | Kill running mChatd |
+| `make status` | Show if mChatd is running |
+| `make logs` | `tail -f /tmp/mchatd_out.log` |
 
 ### 4.3 Configuration
 
 `~/.mCLIChat/config.toml`:
 ```toml
-[swift]
-name  = "mSwiftChatd v0.0.2"
-about = "Swift Agent Daemon https://github.com/zehrer/mChat"
-
 [rust]
-name  = "mRustChatd v0.0.2"
+name  = "mChatd v0.0.2"
 about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 ```
 
-`~/.mCLIChat/roles.json` — set admin rights locally (no command can grant admin):
+`~/.mCLIChat/roles.json` — admin rights (only grantable locally):
 ```json
-{
-  "YOUR_HEX_PUBKEY": "admin"
-}
+{ "YOUR_HEX_PUBKEY": "admin" }
 ```
 
 ---
@@ -154,70 +136,76 @@ about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 |---|---|
 | REQ-01 | NIP-17 gift-wrap messages (kind:1059) are received and decrypted |
 | REQ-02 | NIP-04 encrypted DMs (kind:4) are received and decrypted |
-| REQ-03 | Messages sent by the daemon itself (`fromMe`) are silently dropped |
-| REQ-04 | The same event ID is never processed more than once (deduplication) |
+| REQ-03 | Messages sent by the daemon itself are silently dropped |
+| REQ-04 | The same event ID is never processed more than once |
+| REQ-05 | `last_seen.txt` high-water mark prevents relay backlog replay on restart |
 
 ### 5.2 Access Control
 
 | ID | Requirement |
 |---|---|
-| REQ-10 | A new unknown sender receives a welcome message and is added to `pending` with count=1 |
-| REQ-11 | A pending sender's message increments their count and sends a "still pending" reminder |
-| REQ-12 | A pending sender who reaches `SPAM_THRESHOLD` (5) is auto-blocked |
-| REQ-13 | A blocked sender's messages are silently ignored (no reply) |
-| REQ-14 | A whitelisted sender receives command responses |
-| REQ-15 | During the startup grace period (15 s), relay-backlogged messages from pending/new senders do not increment spam counters |
+| REQ-10 | New unknown sender receives a welcome message, added to `pending` with count=1 |
+| REQ-11 | Pending sender's message increments count and sends "still pending" reminder |
+| REQ-12 | Pending sender reaching `SPAM_THRESHOLD` (5) is auto-blocked |
+| REQ-13 | Blocked sender's messages are silently ignored |
+| REQ-14 | Whitelisted sender receives command responses |
+| REQ-15 | During startup grace period (15 s) relay-backlogged messages from pending/new senders do not increment spam counters |
+| REQ-16 | Admins are notified via NIP-17 when a new user requests access |
 
 ### 5.3 Commands
 
 | ID | Requirement |
 |---|---|
-| REQ-17 | `/ping` → `"pong"` |
-| REQ-18 | `/echo <text>` → echoes text; no args → `"(empty)"` |
-| REQ-19 | `/status` → version, uptime, relay list, message count, authorized/pending/blocked counts |
-| REQ-20 | `/user` → sorted list of senders with ID, access state, role |
-| REQ-21 | `/authorize <id>` → moves user from pending/blocked to whitelist, assigns `user` role |
-| REQ-22 | `/block <id>` → admin-only; moves user to blocked list |
-| REQ-23 | `/block` by a non-admin → permission denied response |
-| REQ-24 | `/help` → lists all commands and shows caller's current role |
-| REQ-25 | Non-command message from authorized user → `"echo: <text>"` |
-| REQ-26 | Unknown command → error message with hint to `/help` |
+| REQ-17 | `/p(ing)` → `pong` |
+| REQ-18 | `/echo <text>` → echoes text; no args → `(empty)` |
+| REQ-19 | `/s(tatus)` → version, uptime, relay list, message count, access counts |
+| REQ-20 | `/u(ser)` → sorted sender list with ID, access state, role |
+| REQ-20a | Corrupt pubkeys shown as `[CORRUPT]` in `/user` list |
+| REQ-21 | `/user auth(orize) <id>` → moves to whitelist, assigns `user` role, notifies user |
+| REQ-22 | `/user bl(ock) <id>` → admin-only; moves to blocked, notifies user |
+| REQ-23 | `/user bl(ock)` by non-admin → permission denied |
+| REQ-24 | `/h(elp)` → lists all commands and caller's role |
+| REQ-25 | Non-command message → standard reply (`FREE_TEXT_REPLY`) |
+| REQ-26 | Unknown command → error + help hint |
+| REQ-33 | `/user det(ails) <id>` → full profile re-fetched from relays |
+| REQ-34 | `/user del(ete) <id>` → admin-only; removes from all data files |
+| REQ-35 | Command shortcuts expand correctly: `/p`→`/ping`, `/s`→`/status`, `/h`→`/help`, `/u`→`/user`, `/user bl`→`/user block`, `/user del`→`/user delete`, `/user det`→`/user details` |
 
 ### 5.4 Roles
 
 | ID | Requirement |
 |---|---|
-| REQ-27 | Admin role can only be granted locally (editing `roles.json`; no chat command) |
-| REQ-28 | `/authorize` assigns `user` role; no entry in `roles.json` defaults to `user` |
-| REQ-29 | Admin role can use `/block`; user role cannot |
+| REQ-27 | Admin role can only be granted locally (editing `roles.json`) |
+| REQ-28 | `/user authorize` assigns `user` role; missing entry defaults to `user` |
+| REQ-29 | Only admins can use `/user block` and `/user delete` |
 
 ### 5.5 User Registry
 
 | ID | Requirement |
 |---|---|
 | REQ-30 | Senders receive sequential integer IDs on first contact |
-| REQ-31 | Display name prefers NIP-05 identifier, then `name` field, then truncated pubkey |
-| REQ-32 | Metadata is re-fetched from relays if both `nip05` and `name` are empty |
+| REQ-31 | Display name prefers NIP-05, then `name` field, then truncated pubkey |
+| REQ-32 | Metadata re-fetched from relays if both `nip05` and `name` are empty |
 
 ### 5.6 Publishing & Identity
 
 | ID | Requirement |
 |---|---|
-| REQ-40 | Private key loaded from `*.key` file; generated and saved on first run |
-| REQ-41 | kind:0 profile event published on startup with name/about from `config.toml` |
+| REQ-40 | Private key loaded from `mchatd.key`; generated and saved on first run |
+| REQ-41 | kind:0 profile published on startup from `config.toml` |
 | REQ-42 | NIP-65 relay list (kind:10002) published on startup |
 | REQ-43 | NIP-17 DM relay list (kind:10050) published on startup |
-| REQ-44 | Replies are sent as NIP-17 gift-wrap (kind:1059) |
+| REQ-44 | Replies sent as NIP-17 gift-wrap (kind:1059) |
 
-### 5.7 Connectivity & Resilience *(future — not yet implemented)*
+### 5.7 Connectivity & Resilience *(future)*
 
 | ID | Requirement | Status |
 |---|---|---|
-| REQ-50 | The daemon detects when a relay connection drops and automatically reconnects | TODO |
-| REQ-51 | After reconnecting, active subscriptions are re-established without restart | TODO |
-| REQ-52 | The daemon detects when the host comes back online after a network outage (e.g. sleep/wake, ISP drop) and reconnects to all configured relays | TODO |
-| REQ-53 | On reconnect the startup grace period (REQ-15) is re-applied so relay backlog is not spam-counted | TODO |
-| REQ-54 | The admin is notified via DM when the daemon reconnects after an outage longer than a configurable threshold | TODO |
+| REQ-50 | Detect relay drop and auto-reconnect | TODO |
+| REQ-51 | Re-establish subscriptions after reconnect without restart | TODO |
+| REQ-52 | Detect network outage (sleep/wake, ISP drop) and reconnect | TODO |
+| REQ-53 | Re-apply startup grace period after reconnect | TODO |
+| REQ-54 | Admin DM notification on reconnect after configurable outage threshold | TODO |
 
 ---
 
@@ -225,140 +213,129 @@ about = "Rust Agent Daemon https://github.com/zehrer/mChat"
 
 ### 6.1 Unit Tests
 
-Run with `make test`.
-
-**Rust** (`rust-cli-chat/src/bin/mRustChatd.rs`, `#[cfg(test)]` module):
+Run with `make test`. All 33 tests in `mChatd/src/main.rs` (`#[cfg(test)]`):
 
 | Test | Covers |
 |---|---|
-| `uptime_seconds_only`, `uptime_minutes`, `uptime_hours` | `format_uptime()` edge cases |
-| `shorten_64char_hex`, `shorten_short_input_no_panic` | `shorten()` boundary |
+| `uptime_seconds_only/minutes/hours` | `format_uptime()` |
+| `shorten_64char_hex`, `shorten_short_input_no_panic` | `shorten()` |
 | `display_name_prefers_nip05`, `_falls_back_to_name`, `_truncates_pubkey` | REQ-31 |
-| `dispatch_plain_text_echoes`, `dispatch_routes_commands` | REQ-25, routing |
+| `dispatch_plain_text_returns_standard_reply` | REQ-25 |
+| `dispatch_routes_commands` | command routing |
 | `cmd_ping`, `cmd_echo_with_args`, `cmd_echo_empty` | REQ-17, REQ-18 |
 | `cmd_unknown` | REQ-26 |
 | `cmd_help_contains_all_commands`, `cmd_help_shows_role` | REQ-24 |
-| `cmd_block_requires_admin` | REQ-23, REQ-29 |
-| `cmd_block_bad_arg`, `cmd_authorize_bad_arg` | input validation |
+| `cmd_user_block_requires_admin` | REQ-23, REQ-29 |
+| `cmd_user_block_bad_arg`, `cmd_user_authorize_bad_arg` | input validation |
+| `shortcuts_top_level`, `shortcuts_user_subcommands` | REQ-35 |
+| `shortcuts_combined_u_plus_subcommand` | REQ-35 chained |
+| `shortcuts_no_false_expansion` | REQ-35 safety |
 | `load_pubkey_file_skips_comments_and_blanks` | file parsing |
-| `check_access_new_sender`, `_whitelisted`, `_blocked`, `_pending` | REQ-10–REQ-14 |
+| `check_access_new/whitelisted/blocked/pending` | REQ-10–14 |
 | `check_access_whitelist_takes_priority_over_pending` | access priority |
 | `get_role_defaults_to_user`, `_admin_from_file` | REQ-27, REQ-28 |
-| `ensure_whitelist_creates_file_with_header`, `_is_idempotent` | REQ-40 setup |
+| `ensure_whitelist_creates_file_with_header`, `_is_idempotent` | REQ-40 |
 
-**Swift** (`Tests/mChatCoreTests/`):
+### 6.2 Integration Tests
 
-| File | Covers |
-|---|---|
-| `NostrKeyPairTests.swift` | REQ-40 — key generation, ECDH |
-| `NIP44Tests.swift` | NIP-44 v2 encryption vectors |
+`mCLIChat --send` drives end-to-end scenarios against a live mChatd. Two test identities (`~/.mCLIChat-test/` admin, `~/.mCLIChat-test2/` user) cover all automated blocks. Run with `make test-integration`.
 
-**TODO — Swift unit tests to add:**
+| Block | Tests | Identity | Covers |
+|---|---|---|---|
+| 1 | T01–T05 | admin | Basic connectivity (ping, echo, unknown cmd) |
+| 2 | T06–T08 | admin | Status, user list, help |
+| 3 | T09–T12 | user | Role enforcement (user cannot admin-cmd) |
+| 4 | T13–T16 | admin | Command shortcuts |
+| 5 | T17–T19 | admin | User details / not-found |
+| 6 | T20–T23 | admin | Block → unblock cycle on user identity |
+| 7 | T24–T30 | user | New-user welcome → pending → authorize flow |
+| 8 | T31–T35 | admin + user | Permission denied, delete user, verify gone, not-found |
+| 9–10 | manual | — | HomeNode remote (Block 9), Nostur app (Block 10) |
 
-| Test class | Covers |
-|---|---|
-| `AccessControlTests` | REQ-10–REQ-15 — access state transitions |
-| `RoleStoreTests` | REQ-27, REQ-28 — role persistence and defaults |
-| `UserRegistryTests` | REQ-30, REQ-31 — ID assignment, display name priority |
-| `DaemonConfigTests` | config.toml parsing, section defaults |
-| `CommandDispatchTests` | REQ-17–REQ-26 — all command responses |
+**No external dependencies:** all 8 automated blocks use the two controlled test identities. The same user identity (`~/.mCLIChat-test2/`) is exercised across Blocks 3, 6, 7, and 8 — role enforcement, state changes, onboarding, and delete.
 
-To enable these, move `AccessControl`, `RoleStore`, `UserRegistry`, and `DaemonConfig` from `Sources/mSwiftChatd/main.swift` into a new file `Sources/mChatCore/Daemon/DaemonSupport.swift`. They will then be reachable by `mChatCoreTests`.
+**Block 7 technique:** delete the user identity from daemon lists → re-contact → daemon treats it as a brand-new unknown user, exercising the full onboarding flow without a separate Nostr account.
 
-### 6.2 Manual Verification Plan
+**Expected results:**
 
-For each requirement below, perform the test after `make deploy` and verify against the expected result.
+| Scenario | Pass | Fail | Skip |
+|---|---|---|---|
+| After ≥ 30 min relay inactivity | 35 | 0 | 2 |
+| Shortly after heavy test usage | 33 | 2 (BUG-05) | 2 |
 
-#### V-RECV: Message Reception
+The 2 permanent skips (T25, T29) test NIP-17 admin-notification delivery and require manual inbox verification. The 2 BUG-05 failures appear at **different test positions** in each run — this randomness distinguishes them from code regressions, which would fail the same test every time. See §8 BUG-05.
 
-| ID | Procedure | Expected |
-|---|---|---|
-| REQ-01 | Send NIP-17 DM to daemon npub from Nostur | Log shows `[NIP-17][auth]…` and reply received |
-| REQ-02 | Send NIP-04 DM via a NIP-04-only client | Log shows `[NIP-04][auth]…` and reply received |
-| REQ-03 | Daemon receives its own outgoing gift-wrap | No loop, no self-reply |
-| REQ-04 | Relay delivers same event twice | Only one log entry and one reply |
+### 6.3 Manual Verification
 
-#### V-ACCESS: Access Control
-
-| ID | Procedure | Expected |
-|---|---|---|
-| REQ-10 | Message from a new (unknown) pubkey | Welcome message received; entry appears in `pending.json` |
-| REQ-11 | Second message from same pending pubkey | "Still pending" reply; count incremented |
-| REQ-12 | Send 5 messages from a pending pubkey | 5th message triggers auto-block; "blocked" reply sent |
-| REQ-13 | Message from a pubkey in `blocked.txt` | No reply; log shows `[blocked]` |
-| REQ-14 | Message from a pubkey in `whitelist.txt` | Command response received |
-| REQ-15 | Stop daemon, send 6 msgs from new key, restart, wait <15 s, check `pending.json` | Count ≤ 1 (or 0 if messages arrived before daemon fully connected); no auto-block |
-
-#### V-CMD: Commands
-
-| ID | Procedure | Expected |
-|---|---|---|
-| REQ-17 | Send `/ping` as authorized user | Reply: `pong` |
-| REQ-18 | Send `/echo hello` | Reply: `hello` |
-| REQ-18 | Send `/echo` (no args) | Reply: `(empty)` |
-| REQ-19 | Send `/status` | Reply contains version, uptime, relay count, message count |
-| REQ-20 | Send `/user` | Reply lists known senders with `#ID name [auth][role]` |
-| REQ-21 | Send `/authorize <id>` as user | Pubkey added to whitelist; `user` role assigned |
-| REQ-22 | Send `/block <id>` as admin | Pubkey moved to blocked list |
-| REQ-23 | Send `/block <id>` as user | Reply: permission denied |
-| REQ-24 | Send `/help` | All commands listed; `Your role: admin/user` shown |
-| REQ-25 | Send `hello there` (no `/`) | Reply: `echo: hello there` |
-| REQ-26 | Send `/unknown` | Reply: `Unknown command: /unknown` + help hint |
-
-#### V-ROLE: Roles
-
-| ID | Procedure | Expected |
-|---|---|---|
-| REQ-27 | Edit `roles.json` locally to grant admin; restart; send `/block` | Block succeeds |
-| REQ-27 | No entry in `roles.json` for an authorized user | Role defaults to `user` |
-| REQ-28 | Run `/authorize <id>`; check `roles.json` | Entry `"user"` appears for that pubkey |
-| REQ-29 | Admin sends `/block <id>` | Succeeds |
-| REQ-29 | User sends `/block <id>` | Permission denied |
-
-#### V-PUBLISH: Publishing & Identity
-
-| ID | Procedure | Expected |
-|---|---|---|
-| REQ-40 | Delete `*.key` file; restart | New key generated; pubkey printed to log |
-| REQ-40 | Restart with existing key | Same pubkey printed |
-| REQ-41 | Check kind:0 on a relay browser after startup | Event with correct name/about |
-| REQ-42 | Check kind:10002 on a relay browser | Event with `r`-tagged relay URLs |
-| REQ-43 | Check kind:10050 on a relay browser | Event with `relay`-tagged relay URLs |
-| REQ-44 | Inspect outgoing reply on relay | Event is kind:1059 (gift-wrap) |
+See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification checklist.
 
 ---
 
-## 7. Known Issues / Bug List
+---
+
+## 7. Code Quality KPIs
+
+Tracked per release. Run locally with `make quality` *(target TBD)*.
+
+| KPI | Tool | Target | Notes |
+|---|---|---|---|
+| Unit test pass rate | `cargo test -p mChatd` | 100 % | 33 tests; gate for every commit |
+| Integration test pass rate | `make test-integration` | 35/35 pass, 2 skip | Target after relay quiet period (≥ 30 min); 33/35 with 2 random failures is acceptable during warm-up — see BUG-05 |
+| Compiler warnings | `cargo build` | 0 warnings | `-D warnings` in CI |
+| Clippy lints | `cargo clippy` | 0 warnings | `--deny warnings` |
+| Unsafe code | `cargo geiger` | 0 unsafe in own crates | Dependencies may use unsafe |
+| Dependency freshness | `cargo outdated` | ≤ 3 months behind latest | Review monthly |
+| Binary size (release) | `ls -lh target/release/mChatd` | < 10 MB | Log and track per release |
+| Test coverage | `cargo llvm-cov` | ≥ 80 % lines mChatd | Backlog — add to CI |
+
+**KIP (Key Inspection Points):**
+
+| KIP | What to verify | When |
+|---|---|---|
+| KIP-01 Daemon stop | PID file exists; process gone after `make stop`; no zombie | Before every `make deploy` |
+| KIP-02 Identity stability | `mchatd.key` unchanged; npub matches expected | After any key/config change |
+| KIP-03 Relay connectivity | All 3 relays CONNECTED in startup log | After network change |
+| KIP-04 Stale-reply guard | mCLIChat rejects gift wraps older than 120 s | After mCLIChat changes |
+
+---
+
+## 8. Known Issues
 
 | ID | Component | Description | Priority |
 |---|---|---|---|
-| BUG-01 | mSwiftChatd | Swift daemon receives no messages in current test environment — needs investigation | High |
-| BUG-02 | iPad account | `stephan.zehrer@gmail.com` keeps hitting spam threshold on restart due to relay backlog | Medium — mitigated by grace period |
-| BUG-03 | mSwiftChatd | No `seen` event-ID deduplication set (REQ-04) | Low |
-| BUG-04 | Both | `AccessControl` / access state logic lives in `main.swift`, not in `mChatCore` — untestable by unit tests | Low (tech debt) |
+| BUG-02 | mChatd | `stephan.zehrer@gmail.com` hits spam threshold on restart — mitigated by grace period + `last_seen.txt` | Low |
+| BUG-05 | Public relays | After ≥ 5 rapid `make test-integration` runs, public relays (nos.lol, relay.damus.io, relay.primal.net) intermittently rate-limit NIP-04 event publishes for up to 45 s. The affected `mCLIChat --send` call times out before the daemon ever receives the command, so no reply arrives. Result: 1–2 random test timeouts per run; exact test varies each run. Retry logic (3× / 1.5 s) handles brief glitches but cannot overcome a sustained rate-limit window. **Recovery:** relay rate limits fully reset after ≥ 30 min of inactivity, returning to 35/35 pass. | Low |
+
+**How to distinguish BUG-05 from a code regression:** a relay rate-limit failure returns an **empty** response (timeout) and the failing test ID differs between runs. A code regression returns a **wrong** response and fails the **same** test every run.
+
+*BUG-01, BUG-03, BUG-04 were mSwiftChatd issues — closed, daemon archived.*
 
 ---
 
-## 8. Roadmap
+## 9. Roadmap
 
 | Milestone | Items |
 |---|---|
-| v0.0.3 | Move daemon support types to `mChatCore`; add Swift unit tests (BUG-04) |
-| v0.0.3 | Fix Swift daemon message reception (BUG-01) |
-| v0.1.0 | Auto-reconnect on relay drop + re-subscribe (REQ-50, REQ-51) |
-| v0.1.0 | Network outage detection and reconnect with grace period re-apply (REQ-52, REQ-53) |
-| v0.1.0 | Admin DM notification on reconnect after outage (REQ-54) |
-| v0.1.0 | Periodic relay health check + automatic relay rotation |
-| v0.1.0 | Message log to file (`~/.mCLIChat/messages.log`) |
-| v0.2.0 | Optional private relay support (NIP-42 auth) |
-| v0.2.0 | Multi-agent forwarding: route commands to sub-agents |
+| v0.0.3 | mCLIChat integration tests (Blocks 1–8 automated) ✓ |
+| v0.0.3 | Stale-relay reply guard (120 s timestamp filter in mCLIChat) ✓ |
+| v0.0.3 | PID-file based `make stop` (KIP-01) ✓ |
+| v0.0.3 | Code quality KPIs + KIP definitions ✓ |
+| v0.0.4 | `make quality` target (clippy + warnings + llvm-cov) |
+| v0.1.0 | Auto-reconnect on relay drop (REQ-50–54) |
+| v0.1.0 | Periodic relay health check + rotation |
+| iOS MVP | NostrEssentials integration, NIP-17 1:1 messaging, identity onboarding |
+| iOS v1.0 | NIP-44 encryption, NIP-28 group chat, Contacts integration, SwiftData |
+| HomeNode | mChatd embedded as agent backend |
 
 ---
 
-## 9. Revision History
+## 10. Revision History
 
 | Version | Date | Changes |
 |---|---|---|
-| 0.1 | 2026-05-xx | Initial draft — access control, commands, roles |
-| 0.2 | 2026-06-01 | Add deploy/test make targets; Rust unit tests (29); startup grace period in both daemons; roles system; SDP written |
-| 0.3 | 2026-06-01 | Suspend mSwiftChatd; add REQ-50–54 (connectivity resilience, future); remote test plan |
+| 0.1 | 2026-05-xx | Initial draft |
+| 0.2 | 2026-06-01 | Rust unit tests (29); startup grace period; roles system |
+| 0.3 | 2026-06-01 | Suspend mSwiftChatd; REQ-50–54; remote test plan |
+| 0.4 | 2026-06-02 | Restructure to Cargo workspace; archive Swift targets; rename to mChatd; add shortcuts (REQ-35), `/user delete` (REQ-34), `/user details` (REQ-33), admin notifications (REQ-16), last_seen.txt (REQ-05); 33 unit tests |
+| 0.5 | 2026-06-03 | mCLIChat integration tests Blocks 1–8 automated (two identities); persisted pre_seen + quiet-period EOSE drain; stale-relay reply guard (120 s); PID-file `make stop` (KIP-01); code quality KPIs + KIP table |
+| 0.6 | 2026-06-05 | Document BUG-05 (relay rate-limiting); add CLAUDE.md agent instructions; clarify integration test expected results (35/35 after quiet period, 33/35 during warm-up) |
