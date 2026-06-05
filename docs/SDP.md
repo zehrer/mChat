@@ -256,6 +256,15 @@ Run with `make test`. All 33 tests in `mChatd/src/main.rs` (`#[cfg(test)]`):
 
 **Block 7 technique:** delete the user identity from daemon lists → re-contact → daemon treats it as a brand-new unknown user, exercising the full onboarding flow without a separate Nostr account.
 
+**Expected results:**
+
+| Scenario | Pass | Fail | Skip |
+|---|---|---|---|
+| After ≥ 30 min relay inactivity | 35 | 0 | 2 |
+| Shortly after heavy test usage | 33 | 2 (BUG-05) | 2 |
+
+The 2 permanent skips (T25, T29) test NIP-17 admin-notification delivery and require manual inbox verification. The 2 BUG-05 failures appear at **different test positions** in each run — this randomness distinguishes them from code regressions, which would fail the same test every time. See §8 BUG-05.
+
 ### 6.3 Manual Verification
 
 See [TEST_PLAN_REMOTE.md](TEST_PLAN_REMOTE.md) for the full remote verification checklist.
@@ -271,7 +280,7 @@ Tracked per release. Run locally with `make quality` *(target TBD)*.
 | KPI | Tool | Target | Notes |
 |---|---|---|---|
 | Unit test pass rate | `cargo test -p mChatd` | 100 % | 33 tests; gate for every commit |
-| Integration test pass rate | `make test-integration` | 100 % automated (skip bot-only) | Automated blocks 1–8 |
+| Integration test pass rate | `make test-integration` | 35/35 pass, 2 skip | Target after relay quiet period (≥ 30 min); 33/35 with 2 random failures is acceptable during warm-up — see BUG-05 |
 | Compiler warnings | `cargo build` | 0 warnings | `-D warnings` in CI |
 | Clippy lints | `cargo clippy` | 0 warnings | `--deny warnings` |
 | Unsafe code | `cargo geiger` | 0 unsafe in own crates | Dependencies may use unsafe |
@@ -295,6 +304,9 @@ Tracked per release. Run locally with `make quality` *(target TBD)*.
 | ID | Component | Description | Priority |
 |---|---|---|---|
 | BUG-02 | mChatd | `stephan.zehrer@gmail.com` hits spam threshold on restart — mitigated by grace period + `last_seen.txt` | Low |
+| BUG-05 | Public relays | After ≥ 5 rapid `make test-integration` runs, public relays (nos.lol, relay.damus.io, relay.primal.net) intermittently rate-limit NIP-04 event publishes for up to 45 s. The affected `mCLIChat --send` call times out before the daemon ever receives the command, so no reply arrives. Result: 1–2 random test timeouts per run; exact test varies each run. Retry logic (3× / 1.5 s) handles brief glitches but cannot overcome a sustained rate-limit window. **Recovery:** relay rate limits fully reset after ≥ 30 min of inactivity, returning to 35/35 pass. | Low |
+
+**How to distinguish BUG-05 from a code regression:** a relay rate-limit failure returns an **empty** response (timeout) and the failing test ID differs between runs. A code regression returns a **wrong** response and fails the **same** test every run.
 
 *BUG-01, BUG-03, BUG-04 were mSwiftChatd issues — closed, daemon archived.*
 
@@ -326,3 +338,4 @@ Tracked per release. Run locally with `make quality` *(target TBD)*.
 | 0.3 | 2026-06-01 | Suspend mSwiftChatd; REQ-50–54; remote test plan |
 | 0.4 | 2026-06-02 | Restructure to Cargo workspace; archive Swift targets; rename to mChatd; add shortcuts (REQ-35), `/user delete` (REQ-34), `/user details` (REQ-33), admin notifications (REQ-16), last_seen.txt (REQ-05); 33 unit tests |
 | 0.5 | 2026-06-03 | mCLIChat integration tests Blocks 1–8 automated (two identities); persisted pre_seen + quiet-period EOSE drain; stale-relay reply guard (120 s); PID-file `make stop` (KIP-01); code quality KPIs + KIP table |
+| 0.6 | 2026-06-05 | Document BUG-05 (relay rate-limiting); add CLAUDE.md agent instructions; clarify integration test expected results (35/35 after quiet period, 33/35 during warm-up) |
